@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://demo-marketplace.local/schemas/agent-output.schema.json",
+  "title": "Allowed Agent Output Envelope",
+  "description": "Agent 只能提交以下结构化材料；状态转换和执行动作不属于 Agent 输出。",
+  "oneOf": [
+    { "$ref": "#/$defs/BuyerAnalysisOutput" },
+    { "$ref": "#/$defs/SellerAnalysisOutput" },
+    { "$ref": "#/$defs/EvidencePolicyOutput" },
+    { "$ref": "#/$defs/AdjudicationOutput" }
+  ],
+  "$defs": {
+    "EnvelopeBase": {
+      "type": "object",
+      "required": ["schema_version", "output_type", "case_id", "case_run_id", "producer", "produced_at", "payload"],
+      "properties": {
+        "schema_version": { "type": "string", "const": "1.0.0" },
+        "output_type": { "type": "string" },
+        "case_id": { "$ref": "case-file.schema.json#/$defs/Id" },
+        "case_run_id": { "$ref": "case-file.schema.json#/$defs/Id" },
+        "producer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["role", "model", "prompt_version"],
+          "properties": {
+            "role": {
+              "enum": ["BUYER_CASE_ANALYST", "SELLER_CASE_ANALYST", "EVIDENCE_POLICY_CLERK", "ADJUDICATION_AGENT"]
+            },
+            "model": { "type": "string", "minLength": 1 },
+            "prompt_version": { "type": "string", "minLength": 1 }
+          }
+        },
+        "produced_at": { "$ref": "case-file.schema.json#/$defs/Timestamp" },
+        "payload": {}
+      }
+    },
+    "BuyerAnalysisOutput": {
+      "unevaluatedProperties": false,
+      "allOf": [
+        { "$ref": "#/$defs/EnvelopeBase" },
+        {
+          "type": "object",
+          "properties": {
+            "output_type": { "const": "BUYER_PARTY_ANALYSIS" },
+            "producer": {
+              "type": "object",
+              "properties": { "role": { "const": "BUYER_CASE_ANALYST" } }
+            },
+            "payload": {
+              "allOf": [
+                { "$ref": "case-file.schema.json#/$defs/PartyAnalysis" },
+                { "type": "object", "properties": { "party": { "const": "BUYER" } } }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "SellerAnalysisOutput": {
+      "unevaluatedProperties": false,
+      "allOf": [
+        { "$ref": "#/$defs/EnvelopeBase" },
+        {
+          "type": "object",
+          "properties": {
+            "output_type": { "const": "SELLER_PARTY_ANALYSIS" },
+            "producer": {
+              "type": "object",
+              "properties": { "role": { "const": "SELLER_CASE_ANALYST" } }
+            },
+            "payload": {
+              "allOf": [
+                { "$ref": "case-file.schema.json#/$defs/PartyAnalysis" },
+                { "type": "object", "properties": { "party": { "const": "SELLER" } } }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "EvidencePolicyOutput": {
+      "unevaluatedProperties": false,
+      "allOf": [
+        { "$ref": "#/$defs/EnvelopeBase" },
+        {
+          "type": "object",
+          "properties": {
+            "output_type": { "const": "EVIDENCE_POLICY_REPORT" },
+            "producer": {
+              "type": "object",
+              "properties": { "role": { "const": "EVIDENCE_POLICY_CLERK" } }
+            },
+            "payload": { "$ref": "case-file.schema.json#/$defs/EvidencePolicyReport" }
+          }
+        }
+      ]
+    },
+    "AdjudicationOutput": {
+      "unevaluatedProperties": false,
+      "allOf": [
+        { "$ref": "#/$defs/EnvelopeBase" },
+        {
+          "type": "object",
+          "properties": {
+            "output_type": { "const": "DECISION_DRAFT" },
+            "producer": {
+              "type": "object",
+              "properties": { "role": { "const": "ADJUDICATION_AGENT" } }
+            },
+            "payload": { "$ref": "case-file.schema.json#/$defs/DecisionDraft" }
+          }
+        }
+      ]
+    }
+  }
+}

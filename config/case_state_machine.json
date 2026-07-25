@@ -1,0 +1,421 @@
+{
+  "schema_version": "1.0.0",
+  "machine_id": "marketplace_dispute_case_v1",
+  "description": "二手交易描述不符争议的确定性案件生命周期",
+  "initial_state": "SUBMITTED",
+  "terminal_states": ["CLOSED"],
+  "states": [
+    {
+      "id": "SUBMITTED",
+      "owner": "SYSTEM",
+      "description": "争议已创建，等待校验和基线快照锁定",
+      "is_terminal": false
+    },
+    {
+      "id": "EVIDENCE_LOCKED",
+      "owner": "SYSTEM",
+      "description": "交易、商品和聊天基线快照已锁定",
+      "is_terminal": false
+    },
+    {
+      "id": "UNDER_INVESTIGATION",
+      "owner": "ORCHESTRATOR",
+      "description": "Agent 正在分析主张、证据、时间线和规则",
+      "is_terminal": false
+    },
+    {
+      "id": "WAITING_FOR_BUYER",
+      "owner": "BUYER",
+      "description": "存在阻塞调查的买方开放问题",
+      "is_terminal": false
+    },
+    {
+      "id": "WAITING_FOR_SELLER",
+      "owner": "SELLER",
+      "description": "存在阻塞调查的卖方开放问题",
+      "is_terminal": false
+    },
+    {
+      "id": "READY_FOR_REVIEW",
+      "owner": "SYSTEM",
+      "description": "结构化建议和 Guard 检查已完成，等待固化审核包",
+      "is_terminal": false
+    },
+    {
+      "id": "HUMAN_REVIEW",
+      "owner": "REVIEWER",
+      "description": "审核员正在核验、修改或批准建议",
+      "is_terminal": false
+    },
+    {
+      "id": "APPROVED",
+      "owner": "SYSTEM",
+      "description": "指定决定版本已获人工批准",
+      "is_terminal": false
+    },
+    {
+      "id": "REJECTED",
+      "owner": "REVIEWER",
+      "description": "当前建议草稿已被审核员拒绝",
+      "is_terminal": false
+    },
+    {
+      "id": "EXECUTING",
+      "owner": "EXECUTOR",
+      "description": "正在执行并核验已批准的模拟处置动作",
+      "is_terminal": false
+    },
+    {
+      "id": "EXECUTION_FAILED",
+      "owner": "EXECUTOR",
+      "description": "执行失败或结果未知，等待查询、幂等重试或人工介入",
+      "is_terminal": false
+    },
+    {
+      "id": "RESOLVED",
+      "owner": "SYSTEM",
+      "description": "处置已核验完成，处于申诉窗口",
+      "is_terminal": false
+    },
+    {
+      "id": "APPEALED",
+      "owner": "SYSTEM",
+      "description": "收到有效申诉，等待是否重开的检查",
+      "is_terminal": false
+    },
+    {
+      "id": "REOPENED",
+      "owner": "REVIEWER",
+      "description": "案件因新证据或重大错误重新打开",
+      "is_terminal": false
+    },
+    {
+      "id": "CLOSED",
+      "owner": "SYSTEM",
+      "description": "案件关闭，仅允许管理员基于有效新证据例外重开",
+      "is_terminal": true
+    }
+  ],
+  "transitions": [
+    {
+      "id": "T01",
+      "from": "SUBMITTED",
+      "to": "EVIDENCE_LOCKED",
+      "trigger": "BASELINE_CAPTURED",
+      "actor_types": ["SYSTEM", "ORCHESTRATOR"],
+      "guards": ["transaction_exists", "claim_exists", "snapshots_hashed"],
+      "effects": ["pin_policy_version", "append_case_event"],
+      "requires_reason": false
+    },
+    {
+      "id": "T02",
+      "from": "SUBMITTED",
+      "to": "CLOSED",
+      "trigger": "CASE_WITHDRAWN_OR_DUPLICATE",
+      "actor_types": ["BUYER", "REVIEWER"],
+      "guards": ["no_irreversible_action_executed"],
+      "effects": ["append_case_event"],
+      "requires_reason": true
+    },
+    {
+      "id": "T03",
+      "from": "EVIDENCE_LOCKED",
+      "to": "UNDER_INVESTIGATION",
+      "trigger": "INVESTIGATION_STARTED",
+      "actor_types": ["ORCHESTRATOR"],
+      "guards": ["policy_version_uniquely_selected", "case_run_created"],
+      "effects": ["append_case_event"],
+      "requires_reason": false
+    },
+    {
+      "id": "T04",
+      "from": "EVIDENCE_LOCKED",
+      "to": "HUMAN_REVIEW",
+      "trigger": "POLICY_SELECTION_FAILED",
+      "actor_types": ["ORCHESTRATOR"],
+      "guards": ["policy_missing_or_ambiguous"],
+      "effects": ["create_guard_violation", "append_case_event"],
+      "requires_reason": true
+    },
+    {
+      "id": "T05",
+      "from": "UNDER_INVESTIGATION",
+      "to": "WAITING_FOR_BUYER",
+      "trigger": "BUYER_EVIDENCE_REQUIRED",
+      "actor_types": ["ORCHESTRATOR", "REVIEWER"],
+      "guards": ["open_buyer_question_exists", "question_round_within_limit"],
+      "effects": ["pause_case_run", "append_case_event"],
+      "requires_reason": false
+    },
+    {
+      "id": "T06",
+      "from": "UNDER_INVESTIGATION",
+      "to": "WAITING_FOR_SELLER",
+      "trigger": "SELLER_EVIDENCE_REQUIRED",
+      "actor_types": ["ORCHESTRATOR", "REVIEWER"],
+      "guards": ["open_seller_question_exists", "question_round_within_limit"],
+      "effects": ["pause_case_run", "append_case_event"],
+      "requires_reason": false
+    },
+    {
+      "id": "T07",
+      "from": "WAITING_FOR_BUYER",
+      "to": "UNDER_INVESTIGATION",
+      "trigger": "BUYER_RESPONSE_RECEIVED",
+      "actor_types": ["BUYER", "ORCHESTRATOR"],
+      "guards": ["response_linked_to_open_question"],
+      "effects": ["create_case_run", "append_case_event"],
+      "requires_reason": false
+    },
+    {
+      "id": "T08",
+      "from": "WAITING_FOR_BUYER",
+      "to": "UNDER_INVESTIGATION",
+      "trigger": "BUYER_RESPONSE_DEADLINE_REACHED",
+      "actor_types": ["SYSTEM", "REVIEWER"],
+      "guards": ["question_deadline_reached"],
+      "effects": ["mark_question_expired", "create_case_run", "append_case_event"],
+      "requires_reason": true
+    },
+    {
+      "id": "T09",
+      "from": "WAITING_FOR_SELLER",
+      "to": "UNDER_INVESTIGATION",
+      "trigger": "SELLER_RESPONSE_RECEIVED",
+      "actor_types": ["SELLER", "ORCHESTRATOR"],
+      "guards": ["response_linked_to_open_question"],
+      "effects": ["create_case_run", "append_case_event"],
+      "requires_reason": false
+    },
+    {
+      "id": "T10",
+      "from": "WAITING_FOR_SELLER",
+      "to": "UNDER_INVESTIGATION",
+      "trigger": "SELLER_RESPONSE_DEADLINE_REACHED",
+      "actor_types": ["SYSTEM", "REVIEWER"],
+      "guards": ["question_deadline_reached"],
+      "effects": ["mark_question_expired", "create_case_run", "append_case_event"],
+      "requires_reason": true
+    },
+    {
+      "id": "T11",
+      "from": "WAITING_FOR_BUYER",
+      "to": "HUMAN_REVIEW",
+      "trigger": "BUYER_QUESTION_LIMIT_REACHED",
+      "actor_types": ["ORCHESTRATOR"],
+      "guards": ["question_round_limit_reached"],
+      "effects": ["create_escalation_draft", "append_case_event"],
+      "requires_reason": true
+    },
+    {
+      "id": "T12",
+      "from": "WAITING_FOR_SELLER",
+      "to": "HUMAN_REVIEW",
+      "trigger": "SELLER_QUESTION_LIMIT_REACHED",
+      "actor_types": ["ORCHESTRATOR"],
+      "guards": ["question_round_limit_reached"],
+      "effects": ["create_escalation_draft", "append_case_event"],
+      "requires_reason": true
+    },
+    {
+      "id": "T13",
+      "from": "UNDER_INVESTIGATION",
+      "to": "READY_FOR_REVIEW",
+      "trigger": "INVESTIGATION_COMPLETED",
+      "actor_types": ["ORCHESTRATOR"],
+      "guards": ["decision_draft_exists", "no_blocking_open_question", "guard_has_no_block_violation"],
+      "effects": ["freeze_review_package", "append_case_event"],
+      "requires_reason": false
+    },
+    {
+      "id": "T14",
+      "from": "UNDER_INVESTIGATION",
+      "to": "HUMAN_REVIEW",
+      "trigger": "AUTOMATION_LIMIT_REACHED",
+      "actor_types": ["ORCHESTRATOR"],
+      "guards": ["budget_or_risk_limit_reached"],
+      "effects": ["create_escalation_draft", "append_case_event"],
+      "requires_reason": true
+    },
+    {
+      "id": "T15",
+      "from": "READY_FOR_REVIEW",
+      "to": "HUMAN_REVIEW",
+      "trigger": "REVIEW_PACKAGE_SUBMITTED",
+      "actor_types": ["SYSTEM", "ORCHESTRATOR"],
+      "guards": ["decision_version_frozen", "review_package_hash_exists"],
+      "effects": ["append_case_event"],
+      "requires_reason": false
+    },
+    {
+      "id": "T16",
+      "from": "HUMAN_REVIEW",
+      "to": "APPROVED",
+      "trigger": "DECISION_APPROVED",
+      "actor_types": ["REVIEWER"],
+      "guards": ["reviewer_authorized", "specific_decision_version_selected"],
+      "effects": ["create_approval_record", "append_case_event"],
+      "requires_reason": true
+    },
+    {
+      "id": "T17",
+      "from": "HUMAN_REVIEW",
+      "to": "REJECTED",
+      "trigger": "DRAFT_REJECTED",
+      "actor_types": ["REVIEWER"],
+      "guards": ["reviewer_authorized"],
+      "effects": ["create_rejection_record", "append_case_event"],
+      "requires_reason": true
+    },
+    {
+      "id": "T18",
+      "from": "HUMAN_REVIEW",
+      "to": "UNDER_INVESTIGATION",
+      "trigger": "MORE_EVIDENCE_REQUIRED",
+      "actor_types": ["REVIEWER"],
+      "guards": ["reviewer_instructions_exist"],
+      "effects": ["create_case_run", "append_case_event"],
+      "requires_reason": true
+    },
+    {
+      "id": "T19",
+      "from": "REJECTED",
+      "to": "UNDER_INVESTIGATION",
+      "trigger": "DRAFT_REVISION_REQUESTED",
+      "actor_types": ["REVIEWER", "ORCHESTRATOR"],
+      "guards": ["revision_instructions_exist"],
+      "effects": ["create_case_run", "append_case_event"],
+      "requires_reason": true
+    },
+    {
+      "id": "T20",
+      "from": "REJECTED",
+      "to": "CLOSED",
+      "trigger": "CASE_REJECTION_FINALIZED",
+      "actor_types": ["REVIEWER"],
+      "guards": ["final_outcome_recorded", "no_execution_action_required"],
+      "effects": ["open_appeal_channel", "append_case_event"],
+      "requires_reason": true
+    },
+    {
+      "id": "T21",
+      "from": "APPROVED",
+      "to": "EXECUTING",
+      "trigger": "EXECUTION_STARTED",
+      "actor_types": ["EXECUTOR"],
+      "guards": ["approved_actions_exist", "idempotency_keys_exist", "amounts_within_transaction_total"],
+      "effects": ["append_case_event"],
+      "requires_reason": false
+    },
+    {
+      "id": "T22",
+      "from": "APPROVED",
+      "to": "RESOLVED",
+      "trigger": "NO_EXECUTION_REQUIRED",
+      "actor_types": ["SYSTEM", "REVIEWER"],
+      "guards": ["approved_actions_empty"],
+      "effects": ["open_appeal_window", "append_case_event"],
+      "requires_reason": true
+    },
+    {
+      "id": "T23",
+      "from": "EXECUTING",
+      "to": "RESOLVED",
+      "trigger": "EXECUTION_VERIFIED",
+      "actor_types": ["EXECUTOR"],
+      "guards": ["all_actions_verified_by_readback"],
+      "effects": ["open_appeal_window", "append_case_event"],
+      "requires_reason": false
+    },
+    {
+      "id": "T24",
+      "from": "EXECUTING",
+      "to": "EXECUTION_FAILED",
+      "trigger": "EXECUTION_FAILED_OR_UNKNOWN",
+      "actor_types": ["EXECUTOR"],
+      "guards": ["action_failed_or_status_unknown"],
+      "effects": ["create_execution_incident", "append_case_event"],
+      "requires_reason": true
+    },
+    {
+      "id": "T25",
+      "from": "EXECUTION_FAILED",
+      "to": "EXECUTING",
+      "trigger": "IDEMPOTENT_RETRY_AUTHORIZED",
+      "actor_types": ["EXECUTOR", "REVIEWER"],
+      "guards": ["idempotency_status_checked", "retry_is_safe"],
+      "effects": ["increment_retry_count", "append_case_event"],
+      "requires_reason": true
+    },
+    {
+      "id": "T26",
+      "from": "EXECUTION_FAILED",
+      "to": "RESOLVED",
+      "trigger": "EXTERNAL_RESULT_VERIFIED",
+      "actor_types": ["EXECUTOR", "REVIEWER"],
+      "guards": ["all_actions_verified_by_readback"],
+      "effects": ["close_execution_incident", "open_appeal_window", "append_case_event"],
+      "requires_reason": true
+    },
+    {
+      "id": "T27",
+      "from": "RESOLVED",
+      "to": "APPEALED",
+      "trigger": "VALID_APPEAL_RECEIVED",
+      "actor_types": ["BUYER", "SELLER", "SYSTEM"],
+      "guards": ["appeal_within_deadline", "appeal_reason_exists"],
+      "effects": ["create_appeal_record", "append_case_event"],
+      "requires_reason": true
+    },
+    {
+      "id": "T28",
+      "from": "RESOLVED",
+      "to": "CLOSED",
+      "trigger": "APPEAL_WINDOW_EXPIRED",
+      "actor_types": ["SYSTEM"],
+      "guards": ["no_open_appeal"],
+      "effects": ["append_case_event"],
+      "requires_reason": false
+    },
+    {
+      "id": "T29",
+      "from": "APPEALED",
+      "to": "REOPENED",
+      "trigger": "APPEAL_ACCEPTED",
+      "actor_types": ["REVIEWER", "ADMIN"],
+      "guards": ["new_evidence_or_material_error_exists"],
+      "effects": ["create_new_decision_version", "append_case_event"],
+      "requires_reason": true
+    },
+    {
+      "id": "T30",
+      "from": "APPEALED",
+      "to": "CLOSED",
+      "trigger": "APPEAL_DENIED",
+      "actor_types": ["REVIEWER"],
+      "guards": ["appeal_review_completed"],
+      "effects": ["record_appeal_decision", "append_case_event"],
+      "requires_reason": true
+    },
+    {
+      "id": "T31",
+      "from": "REOPENED",
+      "to": "UNDER_INVESTIGATION",
+      "trigger": "REINVESTIGATION_STARTED",
+      "actor_types": ["ORCHESTRATOR"],
+      "guards": ["new_case_run_created", "prior_decision_preserved"],
+      "effects": ["append_case_event"],
+      "requires_reason": false
+    },
+    {
+      "id": "T32",
+      "from": "CLOSED",
+      "to": "REOPENED",
+      "trigger": "ADMIN_REOPENED_FOR_NEW_EVIDENCE",
+      "actor_types": ["ADMIN"],
+      "guards": ["material_new_evidence_exists", "admin_authorized"],
+      "effects": ["create_new_decision_version", "append_case_event"],
+      "requires_reason": true
+    }
+  ]
+}

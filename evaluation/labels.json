@@ -1,0 +1,58 @@
+{
+  "schema_version": "1.0.0",
+  "suite_id": "mvp-seeded-v1",
+  "description": "五个本地种子案件的人工期望标签；未进入决定阶段的案件只评估调查和补问指标。",
+  "cases": [
+    {
+      "case_id": "case_clear_mismatch",
+      "expected_outcome": "RETURN_AND_FULL_REFUND",
+      "expected_winner": "BUYER",
+      "expected_policy_version": "2.0.0",
+      "key_evidence_ids": ["ev_clear_mismatch_listing", "ev_clear_mismatch_buyer_report"],
+      "expected_question_required": false,
+      "expected_human_review": true,
+      "score_decision": true
+    },
+    {
+      "case_id": "case_buyer_missing_evidence",
+      "expected_outcome": "RETURN_AND_FULL_REFUND",
+      "expected_winner": "BUYER",
+      "expected_policy_version": "2.0.0",
+      "key_evidence_ids": ["ev_buyer_missing_evidence_listing", "ev_buyer_missing_evidence_buyer_report"],
+      "expected_question_required": true,
+      "expected_human_review": true,
+      "score_decision": true
+    },
+    {
+      "case_id": "case_seller_preshipment",
+      "expected_outcome": "ESCALATE_TO_HUMAN",
+      "expected_winner": "NONE",
+      "expected_policy_version": "2.0.0",
+      "key_evidence_ids": ["ev_seller_preshipment_listing", "ev_seller_preshipment_buyer_report", "ev_seller_preshipment_seller_report"],
+      "expected_question_required": false,
+      "expected_human_review": true,
+      "score_decision": true
+    },
+    {
+      "case_id": "case_serial_conflict",
+      "expected_outcome": "ESCALATE_TO_HUMAN",
+      "expected_winner": "NONE",
+      "expected_policy_version": "2.0.0",
+      "key_evidence_ids": ["ev_serial_conflict_listing", "ev_serial_conflict_buyer_report"],
+      "expected_question_required": true,
+      "expected_human_review": true,
+      "score_decision": true
+    },
+    {
+      "case_id": "case_appeal_reversal",
+      "expected_outcome": "REJECT_CLAIM",
+      "expected_winner": "NONE",
+      "expected_policy_version": "2.0.0",
+      "key_evidence_ids": ["ev_appeal_reversal_listing", "ev_appeal_reversal_buyer_report"],
+      "expected_question_required": false,
+      "expected_human_review": true,
+      "expected_appeal_reopen": true,
+      "score_decision": false
+    }
+  ]
+}

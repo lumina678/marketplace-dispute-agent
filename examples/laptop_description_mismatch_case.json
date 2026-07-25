@@ -1,0 +1,572 @@
+{
+  "schema_version": "1.0.0",
+  "case": {
+    "case_id": "case_laptop_001",
+    "dispute_type": "DESCRIPTION_MISMATCH",
+    "state": "HUMAN_REVIEW",
+    "state_version": 7,
+    "transaction_id": "txn_laptop_001",
+    "buyer_id": "user_buyer_001",
+    "seller_id": "user_seller_001",
+    "created_at": "2026-07-15T10:00:00+08:00",
+    "active_case_run_id": "run_case_002",
+    "question_round_count": 1,
+    "requires_human_review": true,
+    "human_review_reasons": [
+      "设备与主板序列号存在冲突",
+      "卖方提出买方更换硬件的指控",
+      "交易金额超过政策建议高风险阈值"
+    ],
+    "policy_selection": {
+      "policy_id": "marketplace.description_mismatch",
+      "version": "2.0.0",
+      "basis_field": "paid_at",
+      "basis_time": "2026-07-10T09:30:00+08:00",
+      "selected_at": "2026-07-15T10:05:00+08:00"
+    }
+  },
+  "transaction_snapshot": {
+    "transaction_id": "txn_laptop_001",
+    "listing_snapshot_id": "listing_snapshot_001",
+    "paid_at": "2026-07-10T09:30:00+08:00",
+    "delivered_at": "2026-07-14T16:20:00+08:00",
+    "paid_amount": {
+      "currency": "CNY",
+      "amount_minor": 320000
+    },
+    "snapshot_captured_at": "2026-07-15T10:03:00+08:00",
+    "snapshot_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "claims": [
+    {
+      "claim_id": "claim_memory_mismatch",
+      "case_id": "case_laptop_001",
+      "party": "BUYER",
+      "claim_type": "CONFIG_MISMATCH",
+      "issue_type": "DESCRIPTION_MISMATCH",
+      "issue_subtype": "CONFIG_MISMATCH",
+      "routing_status": "ROUTED",
+      "routing_source": "USER_DECLARED",
+      "routing_reason": "买方提交时明确选择商品描述不符。",
+      "routing_confidence": 1.0,
+      "skill_name": "description-mismatch",
+      "skill_version": "1.0.0",
+      "statement": "商品标注 16GB 内存，但签收后检测仅为 8GB。",
+      "status": "SUPPORTED",
+      "asserted_at": "2026-07-15T10:00:00+08:00",
+      "material": true,
+      "evidence_ids": ["ev_listing_snapshot", "ev_device_report"],
+      "responds_to_claim_id": null
+    },
+    {
+      "claim_id": "claim_serial_mismatch",
+      "case_id": "case_laptop_001",
+      "party": "BUYER",
+      "claim_type": "SERIAL_MISMATCH",
+      "issue_type": "DESCRIPTION_MISMATCH",
+      "issue_subtype": "SERIAL_MISMATCH",
+      "routing_status": "ROUTED",
+      "routing_source": "USER_DECLARED",
+      "routing_reason": "买方提交时明确选择商品描述不符。",
+      "routing_confidence": 1.0,
+      "skill_name": "description-mismatch",
+      "skill_version": "1.0.0",
+      "statement": "检测报告中的主板序列号与发布页照片中的序列号不一致。",
+      "status": "DISPUTED",
+      "asserted_at": "2026-07-15T10:00:00+08:00",
+      "material": true,
+      "evidence_ids": ["ev_listing_snapshot", "ev_device_report"],
+      "responds_to_claim_id": null
+    },
+    {
+      "claim_id": "claim_hardware_swap",
+      "case_id": "case_laptop_001",
+      "party": "SELLER",
+      "claim_type": "HARDWARE_SWAP_ALLEGATION",
+      "issue_type": "DESCRIPTION_MISMATCH",
+      "issue_subtype": "HARDWARE_SWAP_ALLEGATION",
+      "routing_status": "ROUTED",
+      "routing_source": "USER_DECLARED",
+      "routing_reason": "卖方抗辩继承当前案件已声明的描述不符争议类型。",
+      "routing_confidence": 1.0,
+      "skill_name": "description-mismatch",
+      "skill_version": "1.0.0",
+      "statement": "发货时设备为 16GB，买方可能在签收后更换了硬件。",
+      "status": "INSUFFICIENT_EVIDENCE",
+      "asserted_at": "2026-07-15T11:20:00+08:00",
+      "material": true,
+      "evidence_ids": ["ev_seller_statement", "ev_shipment_event"],
+      "responds_to_claim_id": "claim_memory_mismatch"
+    }
+  ],
+  "evidence": [
+    {
+      "evidence_id": "ev_listing_snapshot",
+      "case_id": "case_laptop_001",
+      "submitted_by": "SYSTEM",
+      "evidence_type": "LISTING_SNAPSHOT",
+      "description": "创建争议时锁定的商品发布页，文本标注 16GB 内存，照片显示主板序列号 MB-A100。",
+      "submitted_at": "2026-07-15T10:03:00+08:00",
+      "source": {
+        "source_system": "LISTING",
+        "record_id": "listing_snapshot_001",
+        "captured_at": "2026-07-15T10:03:00+08:00",
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "immutable_uri": "snapshot://listing/listing_snapshot_001"
+      },
+      "integrity_status": "SOURCE_VERIFIED",
+      "related_claim_ids": ["claim_memory_mismatch", "claim_serial_mismatch"],
+      "extracted_facts": [
+        {
+          "field": "promised_memory_gb",
+          "value": 16,
+          "unit": "GB",
+          "extractor": "listing_snapshot_parser_v1",
+          "confidence": 1.0
+        },
+        {
+          "field": "listing_mainboard_serial",
+          "value": "MB-A100",
+          "unit": null,
+          "extractor": "manual_verified_v1",
+          "confidence": 0.98
+        }
+      ],
+      "handling_flags": []
+    },
+    {
+      "evidence_id": "ev_chat_snapshot",
+      "case_id": "case_laptop_001",
+      "submitted_by": "SYSTEM",
+      "evidence_type": "CHAT_SNAPSHOT",
+      "description": "交易前聊天中卖方确认内存是 16GB。",
+      "submitted_at": "2026-07-15T10:04:00+08:00",
+      "source": {
+        "source_system": "CONVERSATION",
+        "record_id": "chat_snapshot_001",
+        "captured_at": "2026-07-15T10:04:00+08:00",
+        "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "immutable_uri": "snapshot://conversation/chat_snapshot_001"
+      },
+      "integrity_status": "SOURCE_VERIFIED",
+      "related_claim_ids": ["claim_memory_mismatch"],
+      "extracted_facts": [
+        {
+          "field": "seller_confirmed_memory_gb",
+          "value": 16,
+          "unit": "GB",
+          "extractor": "conversation_search_v1",
+          "confidence": 1.0
+        }
+      ],
+      "handling_flags": ["PII"]
+    },
+    {
+      "evidence_id": "ev_device_report",
+      "case_id": "case_laptop_001",
+      "submitted_by": "BUYER",
+      "evidence_type": "DEVICE_REPORT",
+      "description": "第三方检测报告显示检测时内存为 8GB，主板序列号为 MB-B200。",
+      "submitted_at": "2026-07-15T16:40:00+08:00",
+      "source": {
+        "source_system": "EVIDENCE_STORE",
+        "record_id": "device_report_001",
+        "captured_at": "2026-07-15T16:40:00+08:00",
+        "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "immutable_uri": "evidence://case_laptop_001/device_report_001"
+      },
+      "integrity_status": "HASH_VERIFIED",
+      "related_claim_ids": ["claim_memory_mismatch", "claim_serial_mismatch", "claim_hardware_swap"],
+      "extracted_facts": [
+        {
+          "field": "detected_memory_gb",
+          "value": 8,
+          "unit": "GB",
+          "extractor": "device_report_parser_v1",
+          "confidence": 0.99
+        },
+        {
+          "field": "detected_mainboard_serial",
+          "value": "MB-B200",
+          "unit": null,
+          "extractor": "device_report_parser_v1",
+          "confidence": 0.99
+        }
+      ],
+      "handling_flags": []
+    },
+    {
+      "evidence_id": "ev_shipment_event",
+      "case_id": "case_laptop_001",
+      "submitted_by": "SYSTEM",
+      "evidence_type": "SHIPMENT_EVENT",
+      "description": "物流记录显示包裹于 2026-07-14 16:20 签收；包裹重量 2.40kg。",
+      "submitted_at": "2026-07-15T10:04:30+08:00",
+      "source": {
+        "source_system": "SHIPMENT",
+        "record_id": "shipment_001_delivered",
+        "captured_at": "2026-07-15T10:04:30+08:00",
+        "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "immutable_uri": "snapshot://shipment/shipment_001_delivered"
+      },
+      "integrity_status": "SOURCE_VERIFIED",
+      "related_claim_ids": ["claim_hardware_swap"],
+      "extracted_facts": [
+        {
+          "field": "package_weight_kg",
+          "value": 2.4,
+          "unit": "kg",
+          "extractor": "shipment_timeline_v1",
+          "confidence": 1.0
+        }
+      ],
+      "handling_flags": []
+    },
+    {
+      "evidence_id": "ev_seller_statement",
+      "case_id": "case_laptop_001",
+      "submitted_by": "SELLER",
+      "evidence_type": "PARTY_STATEMENT",
+      "description": "卖方陈述发货时为 16GB 并怀疑买方更换硬件，未附带发货前可识别序列号的检测材料。",
+      "submitted_at": "2026-07-15T11:20:00+08:00",
+      "source": {
+        "source_system": "MANUAL",
+        "record_id": "seller_statement_001",
+        "captured_at": "2026-07-15T11:20:00+08:00",
+        "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "immutable_uri": "evidence://case_laptop_001/seller_statement_001"
+      },
+      "integrity_status": "HASH_VERIFIED",
+      "related_claim_ids": ["claim_hardware_swap"],
+      "extracted_facts": [],
+      "handling_flags": []
+    }
+  ],
+  "evidence_assessments": [
+    {
+      "assessment_id": "assessment_listing",
+      "case_id": "case_laptop_001",
+      "case_run_id": "run_case_002",
+      "evidence_id": "ev_listing_snapshot",
+      "usability": "USABLE",
+      "relevance": "HIGH",
+      "authenticity": "VERIFIED",
+      "reliability": "HIGH",
+      "temporal_fit": "DIRECT",
+      "probative_value": "DIRECT",
+      "findings": ["交易前明确标注 16GB 内存。"],
+      "limitations": ["照片中的主板序列号需要人工核对原图。"],
+      "assessed_at": "2026-07-15T16:55:00+08:00"
+    },
+    {
+      "assessment_id": "assessment_report",
+      "case_id": "case_laptop_001",
+      "case_run_id": "run_case_002",
+      "evidence_id": "ev_device_report",
+      "usability": "USABLE_WITH_LIMITS",
+      "relevance": "HIGH",
+      "authenticity": "PLAUSIBLE",
+      "reliability": "MEDIUM",
+      "temporal_fit": "NEAR_EVENT",
+      "probative_value": "CORROBORATIVE",
+      "findings": ["检测时设备内存为 8GB。", "检测报告记载主板序列号 MB-B200。"],
+      "limitations": ["报告证明检测时状态，不能单独证明签收瞬间状态。"],
+      "assessed_at": "2026-07-15T16:56:00+08:00"
+    },
+    {
+      "assessment_id": "assessment_seller_statement",
+      "case_id": "case_laptop_001",
+      "case_run_id": "run_case_002",
+      "evidence_id": "ev_seller_statement",
+      "usability": "USABLE_WITH_LIMITS",
+      "relevance": "MEDIUM",
+      "authenticity": "VERIFIED",
+      "reliability": "LOW",
+      "temporal_fit": "REMOTE",
+      "probative_value": "CONTEXT_ONLY",
+      "findings": ["卖方明确提出硬件被更换的抗辩。"],
+      "limitations": ["单方陈述不能证明发货时配置或买方实施了更换。"],
+      "assessed_at": "2026-07-15T16:57:00+08:00"
+    }
+  ],
+  "timeline": [
+    {
+      "timeline_event_id": "timeline_listing_created",
+      "case_id": "case_laptop_001",
+      "event_type": "LISTING_PROMISE_CAPTURED",
+      "occurred_at": "2026-07-09T20:00:00+08:00",
+      "description": "商品发布页标注 16GB 内存。",
+      "source_evidence_ids": ["ev_listing_snapshot"],
+      "confidence": 1.0,
+      "disputed": false
+    },
+    {
+      "timeline_event_id": "timeline_paid",
+      "case_id": "case_laptop_001",
+      "event_type": "TRANSACTION_PAID",
+      "occurred_at": "2026-07-10T09:30:00+08:00",
+      "description": "买方支付 3200 元。",
+      "source_evidence_ids": ["ev_listing_snapshot"],
+      "confidence": 1.0,
+      "disputed": false
+    },
+    {
+      "timeline_event_id": "timeline_delivered",
+      "case_id": "case_laptop_001",
+      "event_type": "SHIPMENT_DELIVERED",
+      "occurred_at": "2026-07-14T16:20:00+08:00",
+      "description": "物流记录显示买方签收。",
+      "source_evidence_ids": ["ev_shipment_event"],
+      "confidence": 1.0,
+      "disputed": false
+    },
+    {
+      "timeline_event_id": "timeline_tested",
+      "case_id": "case_laptop_001",
+      "event_type": "DEVICE_TESTED",
+      "occurred_at": "2026-07-15T15:30:00+08:00",
+      "description": "第三方检测时记录内存 8GB、主板序列号 MB-B200。",
+      "source_evidence_ids": ["ev_device_report"],
+      "confidence": 0.95,
+      "disputed": true
+    }
+  ],
+  "policy_citations": [
+    {
+      "citation_id": "citation_definition",
+      "case_id": "case_laptop_001",
+      "policy_id": "marketplace.description_mismatch",
+      "policy_version": "2.0.0",
+      "rule_id": "DM-DEF-01",
+      "citation_key": "marketplace.description_mismatch@2.0.0#DM-DEF-01",
+      "applies_to_claim_ids": ["claim_memory_mismatch"],
+      "rationale": "内存容量属于影响购买决定和价值的关键配置。"
+    },
+    {
+      "citation_id": "citation_buyer_burden",
+      "case_id": "case_laptop_001",
+      "policy_id": "marketplace.description_mismatch",
+      "policy_version": "2.0.0",
+      "rule_id": "DM-BURDEN-01",
+      "citation_key": "marketplace.description_mismatch@2.0.0#DM-BURDEN-01",
+      "applies_to_claim_ids": ["claim_memory_mismatch", "claim_serial_mismatch"],
+      "rationale": "需要同时核验交易前描述、实际状态和设备身份。"
+    },
+    {
+      "citation_id": "citation_seller_burden",
+      "case_id": "case_laptop_001",
+      "policy_id": "marketplace.description_mismatch",
+      "policy_version": "2.0.0",
+      "rule_id": "DM-BURDEN-02",
+      "citation_key": "marketplace.description_mismatch@2.0.0#DM-BURDEN-02",
+      "applies_to_claim_ids": ["claim_hardware_swap"],
+      "rationale": "调包抗辩需要发货前且能关联设备身份与配置的材料。"
+    },
+    {
+      "citation_id": "citation_serial_conflict",
+      "case_id": "case_laptop_001",
+      "policy_id": "marketplace.description_mismatch",
+      "policy_version": "2.0.0",
+      "rule_id": "DM-EVIDENCE-01",
+      "citation_key": "marketplace.description_mismatch@2.0.0#DM-EVIDENCE-01",
+      "applies_to_claim_ids": ["claim_serial_mismatch", "claim_hardware_swap"],
+      "rationale": "序列号冲突不能直接证明任何一方调包，必须人工审核。"
+    },
+    {
+      "citation_id": "citation_escalation",
+      "case_id": "case_laptop_001",
+      "policy_id": "marketplace.description_mismatch",
+      "policy_version": "2.0.0",
+      "rule_id": "DM-ESCALATE-01",
+      "citation_key": "marketplace.description_mismatch@2.0.0#DM-ESCALATE-01",
+      "applies_to_claim_ids": ["claim_memory_mismatch", "claim_serial_mismatch", "claim_hardware_swap"],
+      "rationale": "案件同时触发序列号冲突、调包指控和金额阈值条件。"
+    }
+  ],
+  "open_questions": [
+    {
+      "question_id": "question_buyer_report",
+      "case_id": "case_laptop_001",
+      "case_run_id": "run_case_001",
+      "target": "BUYER",
+      "question": "请提交能够同时显示检测时间、整机或主板序列号和内存容量的第三方检测原报告。",
+      "resolves_claim_ids": ["claim_memory_mismatch", "claim_serial_mismatch"],
+      "missing_fact": "检测对象是否为涉案设备以及检测时内存容量",
+      "acceptable_evidence_types": ["DEVICE_REPORT", "DOCUMENT"],
+      "round_number": 1,
+      "status": "ANSWERED",
+      "created_at": "2026-07-15T12:00:00+08:00",
+      "deadline": "2026-07-18T12:00:00+08:00",
+      "response_evidence_ids": ["ev_device_report"]
+    }
+  ],
+  "party_analyses": [
+    {
+      "analysis_id": "analysis_buyer_002",
+      "case_id": "case_laptop_001",
+      "case_run_id": "run_case_002",
+      "party": "BUYER",
+      "claim_assessments": [
+        {
+          "claim_id": "claim_memory_mismatch",
+          "position": "SUPPORT",
+          "supporting_evidence_ids": ["ev_listing_snapshot", "ev_chat_snapshot", "ev_device_report"],
+          "contrary_evidence_ids": ["ev_seller_statement"],
+          "evidence_gaps": ["缺少从签收到检测之间设备未被拆换的连续记录。"],
+          "reasoning_summary": "交易前 16GB 承诺明确，检测时为 8GB，但签收到检测之间仍存在证据空档。"
+        },
+        {
+          "claim_id": "claim_serial_mismatch",
+          "position": "SUPPORT",
+          "supporting_evidence_ids": ["ev_listing_snapshot", "ev_device_report"],
+          "contrary_evidence_ids": [],
+          "evidence_gaps": ["需要人工核对商品原图和报告原件中的序列号。"],
+          "reasoning_summary": "两个来源记载的主板序列号不同，但冲突原因未知。"
+        }
+      ],
+      "response_points": ["卖方没有提交发货前同时显示序列号和内存的材料。"],
+      "proposed_question_ids": [],
+      "summary": "买方对配置差异提供了初步证据，但设备身份冲突需要人工核验。",
+      "generated_at": "2026-07-15T17:00:00+08:00"
+    },
+    {
+      "analysis_id": "analysis_seller_002",
+      "case_id": "case_laptop_001",
+      "case_run_id": "run_case_002",
+      "party": "SELLER",
+      "claim_assessments": [
+        {
+          "claim_id": "claim_hardware_swap",
+          "position": "UNDETERMINED",
+          "supporting_evidence_ids": ["ev_seller_statement", "ev_shipment_event"],
+          "contrary_evidence_ids": ["ev_device_report"],
+          "evidence_gaps": ["缺少发货前同时显示涉案设备序列号和 16GB 配置的记录。"],
+          "reasoning_summary": "物流重量和单方陈述不能单独证明买方更换硬件。"
+        }
+      ],
+      "response_points": ["检测报告形成于签收后，不能单独证明交付瞬间状态。"],
+      "proposed_question_ids": [],
+      "summary": "卖方提出了需要调查的抗辩，但当前没有达到证明调包的证据要求。",
+      "generated_at": "2026-07-15T17:01:00+08:00"
+    }
+  ],
+  "evidence_policy_reports": [
+    {
+      "report_id": "report_evidence_policy_002",
+      "case_id": "case_laptop_001",
+      "case_run_id": "run_case_002",
+      "policy_selection": {
+        "policy_id": "marketplace.description_mismatch",
+        "version": "2.0.0",
+        "basis_field": "paid_at",
+        "basis_time": "2026-07-10T09:30:00+08:00",
+        "selected_at": "2026-07-15T10:05:00+08:00"
+      },
+      "timeline_event_ids": ["timeline_listing_created", "timeline_paid", "timeline_delivered", "timeline_tested"],
+      "evidence_assessment_ids": ["assessment_listing", "assessment_report", "assessment_seller_statement"],
+      "policy_citation_ids": [
+        "citation_definition",
+        "citation_buyer_burden",
+        "citation_seller_burden",
+        "citation_serial_conflict",
+        "citation_escalation"
+      ],
+      "conflicts": [
+        {
+          "conflict_id": "conflict_mainboard_serial",
+          "description": "发布页照片与检测报告记载的主板序列号不同。",
+          "evidence_ids": ["ev_listing_snapshot", "ev_device_report"],
+          "material": true,
+          "resolution_status": "REQUIRES_HUMAN",
+          "resolution": null
+        }
+      ],
+      "unresolved_issues": ["无法仅凭现有材料确定主板序列号变化发生在何时。"],
+      "generated_at": "2026-07-15T17:03:00+08:00"
+    }
+  ],
+  "decision_drafts": [
+    {
+      "decision_id": "decision_draft_001",
+      "case_id": "case_laptop_001",
+      "case_run_id": "run_case_002",
+      "version": 1,
+      "supersedes_decision_id": null,
+      "outcome": "ESCALATE_TO_HUMAN",
+      "claim_findings": [
+        {
+          "claim_id": "claim_memory_mismatch",
+          "finding": "PARTIALLY_SUPPORTED",
+          "rationale": "16GB 的交易前承诺和检测时 8GB 均有证据，但设备身份冲突尚未解决。",
+          "evidence_ids": ["ev_listing_snapshot", "ev_chat_snapshot", "ev_device_report"],
+          "policy_citation_ids": ["citation_definition", "citation_buyer_burden"]
+        },
+        {
+          "claim_id": "claim_serial_mismatch",
+          "finding": "SUPPORTED",
+          "rationale": "两个可引用来源记载的主板序列号确实不同，但该事实不等于任何一方调包。",
+          "evidence_ids": ["ev_listing_snapshot", "ev_device_report"],
+          "policy_citation_ids": ["citation_serial_conflict"]
+        },
+        {
+          "claim_id": "claim_hardware_swap",
+          "finding": "INSUFFICIENT_EVIDENCE",
+          "rationale": "卖方未提交发货前同时显示设备身份和 16GB 配置的材料。",
+          "evidence_ids": ["ev_seller_statement", "ev_shipment_event"],
+          "policy_citation_ids": ["citation_seller_burden", "citation_serial_conflict"]
+        }
+      ],
+      "established_facts": [
+        {
+          "fact_id": "fact_promised_memory",
+          "statement": "交易前商品页与聊天均明确表示内存为 16GB。",
+          "evidence_ids": ["ev_listing_snapshot", "ev_chat_snapshot"]
+        },
+        {
+          "fact_id": "fact_tested_memory",
+          "statement": "第三方报告记载检测时设备内存为 8GB。",
+          "evidence_ids": ["ev_device_report"]
+        },
+        {
+          "fact_id": "fact_serial_conflict",
+          "statement": "发布页照片与检测报告记载的主板序列号不同。",
+          "evidence_ids": ["ev_listing_snapshot", "ev_device_report"]
+        }
+      ],
+      "refund_amount": null,
+      "shipping_payer": "UNDETERMINED",
+      "unresolved_question_ids": [],
+      "requires_human_review": true,
+      "human_review_reasons": [
+        "序列号冲突不能由 Agent 推定原因。",
+        "卖方提出硬件调包指控。",
+        "若建议全额退款，金额超过政策建议高风险阈值。"
+      ],
+      "reviewer_explanation": "请人工核对商品原图、检测报告原件和卖方是否存在发货前设备记录，再决定是否退货退款。",
+      "user_explanation": "现有材料显示商品承诺与检测结果存在差异，但设备序列号也存在冲突，需要人工进一步核验后给出处置结果。",
+      "created_at": "2026-07-15T17:05:00+08:00"
+    }
+  ],
+  "guard_results": [
+    {
+      "guard_result_id": "guard_result_001",
+      "case_id": "case_laptop_001",
+      "decision_id": "decision_draft_001",
+      "guard_version": "1.0.0",
+      "passed": true,
+      "violations": [
+        {
+          "code": "SERIAL_CONFLICT_REQUIRES_REVIEW",
+          "severity": "WARN",
+          "message": "决定已正确选择转人工，审核时必须查看序列号原始材料。",
+          "json_path": "$.decision_drafts[0].outcome",
+          "related_rule_id": "DM-EVIDENCE-01"
+        }
+      ],
+      "required_action": "PROCEED_TO_HUMAN_REVIEW",
+      "checked_at": "2026-07-15T17:06:00+08:00"
+    }
+  ],
+  "resolution_actions": [],
+  "appeals": []
+}

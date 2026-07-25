@@ -1,0 +1,838 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://demo-marketplace.local/schemas/case-file.schema.json",
+  "title": "Marketplace Dispute Case File",
+  "description": "案件快照和所有可追溯分析材料的统一交换格式",
+  "$ref": "#/$defs/CaseFile",
+  "$defs": {
+    "Id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{2,79}$"
+    },
+    "Timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "Sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "Money": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["currency", "amount_minor"],
+      "properties": {
+        "currency": { "type": "string", "const": "CNY" },
+        "amount_minor": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "PolicySelection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy_id", "version", "basis_field", "basis_time", "selected_at"],
+      "properties": {
+        "policy_id": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "basis_field": { "type": "string", "const": "paid_at" },
+        "basis_time": { "$ref": "#/$defs/Timestamp" },
+        "selected_at": { "$ref": "#/$defs/Timestamp" }
+      }
+    },
+    "Case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "case_id",
+        "dispute_type",
+        "state",
+        "state_version",
+        "transaction_id",
+        "buyer_id",
+        "seller_id",
+        "created_at",
+        "question_round_count",
+        "requires_human_review",
+        "policy_selection"
+      ],
+      "properties": {
+        "case_id": { "$ref": "#/$defs/Id" },
+        "dispute_type": {
+          "enum": [
+            "DESCRIPTION_MISMATCH",
+            "MISSING_PARTS",
+            "EMPTY_PACKAGE",
+            "SHIPPING_DAMAGE",
+            "COUNTERFEIT",
+            "OTHER"
+          ]
+        },
+        "state": {
+          "enum": [
+            "SUBMITTED",
+            "EVIDENCE_LOCKED",
+            "UNDER_INVESTIGATION",
+            "WAITING_FOR_BUYER",
+            "WAITING_FOR_SELLER",
+            "READY_FOR_REVIEW",
+            "HUMAN_REVIEW",
+            "APPROVED",
+            "REJECTED",
+            "EXECUTING",
+            "EXECUTION_FAILED",
+            "RESOLVED",
+            "APPEALED",
+            "REOPENED",
+            "CLOSED"
+          ]
+        },
+        "state_version": { "type": "integer", "minimum": 1 },
+        "transaction_id": { "$ref": "#/$defs/Id" },
+        "buyer_id": { "$ref": "#/$defs/Id" },
+        "seller_id": { "$ref": "#/$defs/Id" },
+        "created_at": { "$ref": "#/$defs/Timestamp" },
+        "active_case_run_id": {
+          "oneOf": [{ "$ref": "#/$defs/Id" }, { "type": "null" }]
+        },
+        "question_round_count": { "type": "integer", "minimum": 0, "maximum": 3 },
+        "requires_human_review": { "type": "boolean" },
+        "human_review_reasons": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "policy_selection": { "$ref": "#/$defs/PolicySelection" }
+      }
+    },
+    "TransactionSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "transaction_id",
+        "listing_snapshot_id",
+        "paid_at",
+        "paid_amount",
+        "snapshot_captured_at",
+        "snapshot_sha256"
+      ],
+      "properties": {
+        "transaction_id": { "$ref": "#/$defs/Id" },
+        "listing_snapshot_id": { "$ref": "#/$defs/Id" },
+        "paid_at": { "$ref": "#/$defs/Timestamp" },
+        "delivered_at": {
+          "oneOf": [{ "$ref": "#/$defs/Timestamp" }, { "type": "null" }]
+        },
+        "paid_amount": { "$ref": "#/$defs/Money" },
+        "snapshot_captured_at": { "$ref": "#/$defs/Timestamp" },
+        "snapshot_sha256": { "$ref": "#/$defs/Sha256" }
+      }
+    },
+    "Claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "claim_id",
+        "case_id",
+        "party",
+        "claim_type",
+        "issue_type",
+        "issue_subtype",
+        "routing_status",
+        "routing_source",
+        "routing_reason",
+        "routing_confidence",
+        "skill_name",
+        "skill_version",
+        "statement",
+        "status",
+        "asserted_at",
+        "material",
+        "evidence_ids"
+      ],
+      "properties": {
+        "claim_id": { "$ref": "#/$defs/Id" },
+        "case_id": { "$ref": "#/$defs/Id" },
+        "party": { "enum": ["BUYER", "SELLER"] },
+        "claim_type": {
+          "enum": [
+            "CONFIG_MISMATCH",
+            "SERIAL_MISMATCH",
+            "FUNCTIONAL_DEFECT",
+            "REPAIR_HISTORY_MISMATCH",
+            "HARDWARE_SWAP_ALLEGATION",
+            "OTHER_DESCRIPTION_MISMATCH",
+            "MISSING_ACCESSORY",
+            "MISSING_COMPONENT",
+            "QUANTITY_SHORTAGE",
+            "PACKAGE_EMPTY",
+            "CONTENT_NOT_RECEIVED",
+            "WEIGHT_ANOMALY",
+            "ITEM_DAMAGED_IN_TRANSIT",
+            "PACKAGING_DAMAGE",
+            "INSUFFICIENT_PACKAGING",
+            "LATE_DAMAGE_REPORT",
+            "COUNTERFEIT_ALLEGATION",
+            "OTHER"
+          ]
+        },
+        "issue_type": {
+          "enum": [
+            "DESCRIPTION_MISMATCH",
+            "MISSING_PARTS",
+            "EMPTY_PACKAGE",
+            "SHIPPING_DAMAGE",
+            "COUNTERFEIT",
+            "OTHER"
+          ]
+        },
+        "issue_subtype": { "type": ["string", "null"] },
+        "routing_status": { "enum": ["UNROUTED", "ROUTED", "NEEDS_HUMAN", "OVERRIDDEN"] },
+        "routing_source": {
+          "enum": [
+            "USER_DECLARED",
+            "PLATFORM_REASON_CODE",
+            "DETERMINISTIC_RULE",
+            "MODEL_SUGGESTION",
+            "REVIEWER_OVERRIDE",
+            "LEGACY_MIGRATION"
+          ]
+        },
+        "routing_reason": { "type": ["string", "null"] },
+        "routing_confidence": {
+          "oneOf": [
+            { "type": "number", "minimum": 0, "maximum": 1 },
+            { "type": "null" }
+          ]
+        },
+        "skill_name": {
+          "oneOf": [
+            { "type": "string", "pattern": "^[a-z][a-z0-9-]+$" },
+            { "type": "null" }
+          ]
+        },
+        "skill_version": {
+          "oneOf": [
+            { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+            { "type": "null" }
+          ]
+        },
+        "statement": { "type": "string", "minLength": 1 },
+        "status": {
+          "enum": ["ALLEGED", "DISPUTED", "SUPPORTED", "NOT_SUPPORTED", "INSUFFICIENT_EVIDENCE"]
+        },
+        "asserted_at": { "$ref": "#/$defs/Timestamp" },
+        "material": { "type": "boolean" },
+        "evidence_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/Id" }
+        },
+        "responds_to_claim_id": {
+          "oneOf": [{ "$ref": "#/$defs/Id" }, { "type": "null" }]
+        }
+      }
+    },
+    "SourceReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_system", "record_id", "captured_at", "sha256", "immutable_uri"],
+      "properties": {
+        "source_system": {
+          "enum": ["TRANSACTION", "LISTING", "CONVERSATION", "SHIPMENT", "EVIDENCE_STORE", "PAYMENT", "MANUAL"]
+        },
+        "record_id": { "type": "string", "minLength": 1 },
+        "captured_at": { "$ref": "#/$defs/Timestamp" },
+        "sha256": { "$ref": "#/$defs/Sha256" },
+        "immutable_uri": { "type": "string", "pattern": "^(evidence|snapshot)://" }
+      }
+    },
+    "EvidenceExtractedFact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field", "value", "extractor", "confidence"],
+      "properties": {
+        "field": { "type": "string", "minLength": 1 },
+        "value": {},
+        "unit": { "type": ["string", "null"] },
+        "extractor": { "type": "string", "minLength": 1 },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "Evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidence_id",
+        "case_id",
+        "submitted_by",
+        "evidence_type",
+        "description",
+        "submitted_at",
+        "source",
+        "integrity_status",
+        "related_claim_ids",
+        "extracted_facts",
+        "handling_flags"
+      ],
+      "properties": {
+        "evidence_id": { "$ref": "#/$defs/Id" },
+        "case_id": { "$ref": "#/$defs/Id" },
+        "submitted_by": { "enum": ["BUYER", "SELLER", "SYSTEM", "REVIEWER", "THIRD_PARTY"] },
+        "evidence_type": {
+          "enum": [
+            "LISTING_SNAPSHOT",
+            "CHAT_SNAPSHOT",
+            "SHIPMENT_EVENT",
+            "DEVICE_REPORT",
+            "PHOTO",
+            "VIDEO",
+            "DOCUMENT",
+            "PARTY_STATEMENT",
+            "PAYMENT_RECORD"
+          ]
+        },
+        "description": { "type": "string", "minLength": 1 },
+        "submitted_at": { "$ref": "#/$defs/Timestamp" },
+        "source": { "$ref": "#/$defs/SourceReference" },
+        "integrity_status": { "enum": ["SOURCE_VERIFIED", "HASH_VERIFIED", "UNVERIFIED", "FAILED"] },
+        "related_claim_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/Id" }
+        },
+        "extracted_facts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/EvidenceExtractedFact" }
+        },
+        "handling_flags": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": ["CONTAINS_UNTRUSTED_INSTRUCTIONS", "PII", "MALWARE_SCAN_REQUIRED", "LOW_QUALITY", "POSSIBLE_DUPLICATE"]
+          }
+        }
+      }
+    },
+    "EvidenceAssessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assessment_id",
+        "case_id",
+        "case_run_id",
+        "evidence_id",
+        "usability",
+        "relevance",
+        "authenticity",
+        "reliability",
+        "temporal_fit",
+        "probative_value",
+        "findings",
+        "limitations",
+        "assessed_at"
+      ],
+      "properties": {
+        "assessment_id": { "$ref": "#/$defs/Id" },
+        "case_id": { "$ref": "#/$defs/Id" },
+        "case_run_id": { "$ref": "#/$defs/Id" },
+        "evidence_id": { "$ref": "#/$defs/Id" },
+        "usability": { "enum": ["USABLE", "USABLE_WITH_LIMITS", "NOT_USABLE"] },
+        "relevance": { "enum": ["HIGH", "MEDIUM", "LOW", "NONE"] },
+        "authenticity": { "enum": ["VERIFIED", "PLAUSIBLE", "UNVERIFIED", "CONTESTED", "FAILED"] },
+        "reliability": { "enum": ["HIGH", "MEDIUM", "LOW", "UNKNOWN"] },
+        "temporal_fit": { "enum": ["DIRECT", "NEAR_EVENT", "REMOTE", "UNKNOWN"] },
+        "probative_value": { "enum": ["DIRECT", "CORROBORATIVE", "CONTEXT_ONLY", "NONE"] },
+        "findings": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "limitations": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "assessed_at": { "$ref": "#/$defs/Timestamp" }
+      }
+    },
+    "TimelineEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "timeline_event_id",
+        "case_id",
+        "event_type",
+        "occurred_at",
+        "description",
+        "source_evidence_ids",
+        "confidence",
+        "disputed"
+      ],
+      "properties": {
+        "timeline_event_id": { "$ref": "#/$defs/Id" },
+        "case_id": { "$ref": "#/$defs/Id" },
+        "event_type": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]+$" },
+        "occurred_at": { "$ref": "#/$defs/Timestamp" },
+        "description": { "type": "string", "minLength": 1 },
+        "source_evidence_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/Id" }
+        },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "disputed": { "type": "boolean" }
+      }
+    },
+    "PolicyCitation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "citation_id",
+        "case_id",
+        "policy_id",
+        "policy_version",
+        "rule_id",
+        "citation_key",
+        "applies_to_claim_ids",
+        "rationale"
+      ],
+      "properties": {
+        "citation_id": { "$ref": "#/$defs/Id" },
+        "case_id": { "$ref": "#/$defs/Id" },
+        "policy_id": { "type": "string", "minLength": 1 },
+        "policy_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "rule_id": { "type": "string", "pattern": "^[A-Z][A-Z0-9_.-]+$" },
+        "citation_key": { "type": "string", "pattern": "^.+@[0-9]+\\.[0-9]+\\.[0-9]+#[A-Z][A-Z0-9_.-]+$" },
+        "applies_to_claim_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/Id" }
+        },
+        "rationale": { "type": "string", "minLength": 1 }
+      }
+    },
+    "OpenQuestion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "question_id",
+        "case_id",
+        "case_run_id",
+        "target",
+        "question",
+        "resolves_claim_ids",
+        "missing_fact",
+        "acceptable_evidence_types",
+        "round_number",
+        "status",
+        "created_at",
+        "deadline"
+      ],
+      "properties": {
+        "question_id": { "$ref": "#/$defs/Id" },
+        "case_id": { "$ref": "#/$defs/Id" },
+        "case_run_id": { "$ref": "#/$defs/Id" },
+        "target": { "enum": ["BUYER", "SELLER"] },
+        "question": { "type": "string", "minLength": 1 },
+        "resolves_claim_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/Id" }
+        },
+        "missing_fact": { "type": "string", "minLength": 1 },
+        "acceptable_evidence_types": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "round_number": { "type": "integer", "minimum": 1, "maximum": 3 },
+        "status": { "enum": ["OPEN", "ANSWERED", "EXPIRED", "WAIVED"] },
+        "created_at": { "$ref": "#/$defs/Timestamp" },
+        "deadline": { "$ref": "#/$defs/Timestamp" },
+        "response_evidence_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/Id" }
+        }
+      }
+    },
+    "ClaimAssessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "claim_id",
+        "position",
+        "supporting_evidence_ids",
+        "contrary_evidence_ids",
+        "evidence_gaps",
+        "reasoning_summary"
+      ],
+      "properties": {
+        "claim_id": { "$ref": "#/$defs/Id" },
+        "position": { "enum": ["SUPPORT", "OPPOSE", "PARTIAL", "UNDETERMINED"] },
+        "supporting_evidence_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/Id" }
+        },
+        "contrary_evidence_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/Id" }
+        },
+        "evidence_gaps": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "reasoning_summary": { "type": "string", "minLength": 1 }
+      }
+    },
+    "PartyAnalysis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "analysis_id",
+        "case_id",
+        "case_run_id",
+        "party",
+        "claim_assessments",
+        "response_points",
+        "proposed_question_ids",
+        "summary",
+        "generated_at"
+      ],
+      "properties": {
+        "analysis_id": { "$ref": "#/$defs/Id" },
+        "case_id": { "$ref": "#/$defs/Id" },
+        "case_run_id": { "$ref": "#/$defs/Id" },
+        "party": { "enum": ["BUYER", "SELLER"] },
+        "claim_assessments": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ClaimAssessment" }
+        },
+        "response_points": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "proposed_question_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/Id" }
+        },
+        "summary": { "type": "string", "minLength": 1 },
+        "generated_at": { "$ref": "#/$defs/Timestamp" }
+      }
+    },
+    "EvidenceConflict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["conflict_id", "description", "evidence_ids", "material", "resolution_status"],
+      "properties": {
+        "conflict_id": { "$ref": "#/$defs/Id" },
+        "description": { "type": "string", "minLength": 1 },
+        "evidence_ids": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/Id" }
+        },
+        "material": { "type": "boolean" },
+        "resolution_status": { "enum": ["OPEN", "RESOLVED", "REQUIRES_HUMAN"] },
+        "resolution": { "type": ["string", "null"] }
+      }
+    },
+    "EvidencePolicyReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "report_id",
+        "case_id",
+        "case_run_id",
+        "policy_selection",
+        "timeline_event_ids",
+        "evidence_assessment_ids",
+        "policy_citation_ids",
+        "conflicts",
+        "unresolved_issues",
+        "generated_at"
+      ],
+      "properties": {
+        "report_id": { "$ref": "#/$defs/Id" },
+        "case_id": { "$ref": "#/$defs/Id" },
+        "case_run_id": { "$ref": "#/$defs/Id" },
+        "policy_selection": { "$ref": "#/$defs/PolicySelection" },
+        "timeline_event_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/Id" }
+        },
+        "evidence_assessment_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/Id" }
+        },
+        "policy_citation_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/Id" }
+        },
+        "conflicts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/EvidenceConflict" }
+        },
+        "unresolved_issues": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "generated_at": { "$ref": "#/$defs/Timestamp" }
+      }
+    },
+    "EstablishedFact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fact_id", "statement", "evidence_ids"],
+      "properties": {
+        "fact_id": { "$ref": "#/$defs/Id" },
+        "statement": { "type": "string", "minLength": 1 },
+        "evidence_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/Id" }
+        }
+      }
+    },
+    "ClaimFinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claim_id", "finding", "rationale", "evidence_ids", "policy_citation_ids"],
+      "properties": {
+        "claim_id": { "$ref": "#/$defs/Id" },
+        "finding": { "enum": ["SUPPORTED", "PARTIALLY_SUPPORTED", "NOT_SUPPORTED", "INSUFFICIENT_EVIDENCE"] },
+        "rationale": { "type": "string", "minLength": 1 },
+        "evidence_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/Id" }
+        },
+        "policy_citation_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/Id" }
+        }
+      }
+    },
+    "DecisionDraft": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decision_id",
+        "case_id",
+        "case_run_id",
+        "version",
+        "supersedes_decision_id",
+        "outcome",
+        "claim_findings",
+        "established_facts",
+        "refund_amount",
+        "shipping_payer",
+        "unresolved_question_ids",
+        "requires_human_review",
+        "human_review_reasons",
+        "reviewer_explanation",
+        "user_explanation",
+        "created_at"
+      ],
+      "properties": {
+        "decision_id": { "$ref": "#/$defs/Id" },
+        "case_id": { "$ref": "#/$defs/Id" },
+        "case_run_id": { "$ref": "#/$defs/Id" },
+        "version": { "type": "integer", "minimum": 1 },
+        "supersedes_decision_id": {
+          "oneOf": [{ "$ref": "#/$defs/Id" }, { "type": "null" }]
+        },
+        "outcome": {
+          "enum": [
+            "RETURN_AND_FULL_REFUND",
+            "PARTIAL_REFUND",
+            "REJECT_CLAIM",
+            "REQUEST_MORE_EVIDENCE",
+            "RELEASE_FUNDS",
+            "ESCALATE_TO_HUMAN"
+          ]
+        },
+        "claim_findings": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/ClaimFinding" }
+        },
+        "established_facts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/EstablishedFact" }
+        },
+        "refund_amount": {
+          "oneOf": [{ "$ref": "#/$defs/Money" }, { "type": "null" }]
+        },
+        "shipping_payer": { "enum": ["BUYER", "SELLER", "PLATFORM", "NOT_APPLICABLE", "UNDETERMINED"] },
+        "unresolved_question_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/Id" }
+        },
+        "requires_human_review": { "type": "boolean", "const": true },
+        "human_review_reasons": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "reviewer_explanation": { "type": "string", "minLength": 1 },
+        "user_explanation": { "type": "string", "minLength": 1 },
+        "created_at": { "$ref": "#/$defs/Timestamp" }
+      }
+    },
+    "GuardViolation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "message", "json_path"],
+      "properties": {
+        "code": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]+$" },
+        "severity": { "enum": ["BLOCK", "WARN"] },
+        "message": { "type": "string", "minLength": 1 },
+        "json_path": { "type": "string", "minLength": 1 },
+        "related_rule_id": { "type": ["string", "null"] }
+      }
+    },
+    "GuardResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "guard_result_id",
+        "case_id",
+        "decision_id",
+        "guard_version",
+        "passed",
+        "violations",
+        "required_action",
+        "checked_at"
+      ],
+      "properties": {
+        "guard_result_id": { "$ref": "#/$defs/Id" },
+        "case_id": { "$ref": "#/$defs/Id" },
+        "decision_id": { "$ref": "#/$defs/Id" },
+        "guard_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "passed": { "type": "boolean" },
+        "violations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/GuardViolation" }
+        },
+        "required_action": {
+          "enum": ["PROCEED_TO_HUMAN_REVIEW", "RETURN_TO_ADJUDICATION", "ESCALATE_TO_HUMAN", "BLOCK_EXECUTION"]
+        },
+        "checked_at": { "$ref": "#/$defs/Timestamp" }
+      }
+    },
+    "ResolutionAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action_id",
+        "case_id",
+        "decision_id",
+        "action_type",
+        "amount",
+        "idempotency_key",
+        "status",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "action_id": { "$ref": "#/$defs/Id" },
+        "case_id": { "$ref": "#/$defs/Id" },
+        "decision_id": { "$ref": "#/$defs/Id" },
+        "action_type": { "enum": ["CREATE_RETURN", "FULL_REFUND", "PARTIAL_REFUND", "RELEASE_FUNDS", "FREEZE_FUNDS"] },
+        "amount": {
+          "oneOf": [{ "$ref": "#/$defs/Money" }, { "type": "null" }]
+        },
+        "idempotency_key": { "type": "string", "minLength": 16, "maxLength": 200 },
+        "status": { "enum": ["DRAFT", "APPROVED", "EXECUTING", "SUCCEEDED", "FAILED", "UNKNOWN", "CANCELLED"] },
+        "external_reference": { "type": ["string", "null"] },
+        "failure_code": { "type": ["string", "null"] },
+        "created_at": { "$ref": "#/$defs/Timestamp" },
+        "updated_at": { "$ref": "#/$defs/Timestamp" }
+      }
+    },
+    "Appeal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "appeal_id",
+        "case_id",
+        "decision_id",
+        "appellant",
+        "grounds",
+        "statement",
+        "evidence_ids",
+        "status",
+        "submitted_at"
+      ],
+      "properties": {
+        "appeal_id": { "$ref": "#/$defs/Id" },
+        "case_id": { "$ref": "#/$defs/Id" },
+        "decision_id": { "$ref": "#/$defs/Id" },
+        "appellant": { "enum": ["BUYER", "SELLER"] },
+        "grounds": { "enum": ["NEW_EVIDENCE", "POLICY_ERROR", "EVIDENCE_OMISSION", "EXECUTION_ERROR", "OTHER"] },
+        "statement": { "type": "string", "minLength": 1 },
+        "evidence_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/Id" }
+        },
+        "status": { "enum": ["SUBMITTED", "UNDER_REVIEW", "ACCEPTED", "DENIED"] },
+        "submitted_at": { "$ref": "#/$defs/Timestamp" },
+        "resolved_at": {
+          "oneOf": [{ "$ref": "#/$defs/Timestamp" }, { "type": "null" }]
+        },
+        "resolution_reason": { "type": ["string", "null"] }
+      }
+    },
+    "CaseFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "case",
+        "transaction_snapshot",
+        "claims",
+        "evidence",
+        "evidence_assessments",
+        "timeline",
+        "policy_citations",
+        "open_questions",
+        "party_analyses",
+        "evidence_policy_reports",
+        "decision_drafts",
+        "guard_results",
+        "resolution_actions",
+        "appeals"
+      ],
+      "properties": {
+        "schema_version": { "type": "string", "const": "1.0.0" },
+        "case": { "$ref": "#/$defs/Case" },
+        "transaction_snapshot": { "$ref": "#/$defs/TransactionSnapshot" },
+        "claims": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/Claim" } },
+        "evidence": { "type": "array", "items": { "$ref": "#/$defs/Evidence" } },
+        "evidence_assessments": { "type": "array", "items": { "$ref": "#/$defs/EvidenceAssessment" } },
+        "timeline": { "type": "array", "items": { "$ref": "#/$defs/TimelineEvent" } },
+        "policy_citations": { "type": "array", "items": { "$ref": "#/$defs/PolicyCitation" } },
+        "open_questions": { "type": "array", "items": { "$ref": "#/$defs/OpenQuestion" } },
+        "party_analyses": { "type": "array", "items": { "$ref": "#/$defs/PartyAnalysis" } },
+        "evidence_policy_reports": { "type": "array", "items": { "$ref": "#/$defs/EvidencePolicyReport" } },
+        "decision_drafts": { "type": "array", "items": { "$ref": "#/$defs/DecisionDraft" } },
+        "guard_results": { "type": "array", "items": { "$ref": "#/$defs/GuardResult" } },
+        "resolution_actions": { "type": "array", "items": { "$ref": "#/$defs/ResolutionAction" } },
+        "appeals": { "type": "array", "items": { "$ref": "#/$defs/Appeal" } }
+      }
+    }
+  }
+}

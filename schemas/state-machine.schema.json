@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://demo-marketplace.local/schemas/state-machine.schema.json",
+  "title": "Case State Machine Definition",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "machine_id",
+    "initial_state",
+    "terminal_states",
+    "states",
+    "transitions"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "machine_id": { "type": "string", "minLength": 1 },
+    "description": { "type": "string" },
+    "initial_state": { "$ref": "#/$defs/stateId" },
+    "terminal_states": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/stateId" },
+      "uniqueItems": true,
+      "minItems": 1
+    },
+    "states": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "owner", "description", "is_terminal"],
+        "properties": {
+          "id": { "$ref": "#/$defs/stateId" },
+          "owner": {
+            "enum": ["SYSTEM", "ORCHESTRATOR", "BUYER", "SELLER", "REVIEWER", "EXECUTOR"]
+          },
+          "description": { "type": "string", "minLength": 1 },
+          "is_terminal": { "type": "boolean" }
+        }
+      }
+    },
+    "transitions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "from",
+          "to",
+          "trigger",
+          "actor_types",
+          "guards",
+          "effects",
+          "requires_reason"
+        ],
+        "properties": {
+          "id": { "type": "string", "pattern": "^T[0-9]{2}$" },
+          "from": { "$ref": "#/$defs/stateId" },
+          "to": { "$ref": "#/$defs/stateId" },
+          "trigger": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]+$" },
+          "actor_types": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "enum": ["SYSTEM", "ORCHESTRATOR", "BUYER", "SELLER", "REVIEWER", "ADMIN", "EXECUTOR"]
+            }
+          },
+          "guards": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "effects": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "requires_reason": { "type": "boolean" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "stateId": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]+$"
+    }
+  }
+}

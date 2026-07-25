@@ -1,0 +1,27 @@
+{
+  "schema_version": "1.0.0",
+  "selection_basis": {
+    "transaction_time_field": "paid_at",
+    "interval_semantics": "[effective_from,effective_to)",
+    "on_zero_matches": "ESCALATE_TO_HUMAN",
+    "on_multiple_matches": "ESCALATE_TO_HUMAN"
+  },
+  "policies": [
+    {
+      "policy_id": "marketplace.description_mismatch",
+      "version": "1.0.0",
+      "status": "RETIRED",
+      "effective_from": "2025-01-01T00:00:00+08:00",
+      "effective_to": "2026-01-01T00:00:00+08:00",
+      "path": "description_mismatch/1.0.0.json"
+    },
+    {
+      "policy_id": "marketplace.description_mismatch",
+      "version": "2.0.0",
+      "status": "ACTIVE",
+      "effective_from": "2026-01-01T00:00:00+08:00",
+      "effective_to": null,
+      "path": "description_mismatch/2.0.0.json"
+    }
+  ]
+}

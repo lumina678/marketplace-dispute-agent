@@ -1,0 +1,218 @@
+{
+  "schema_version": "1.0.0",
+  "policy_id": "marketplace.description_mismatch",
+  "version": "1.0.0",
+  "title": "二手笔记本描述不符争议处理规则（演示版）",
+  "platform": "demo-marketplace",
+  "status": "RETIRED",
+  "effective_from": "2025-01-01T00:00:00+08:00",
+  "effective_to": "2026-01-01T00:00:00+08:00",
+  "selection_basis": {
+    "transaction_time_field": "paid_at",
+    "interval_semantics": "[effective_from,effective_to)",
+    "timezone": "Asia/Shanghai"
+  },
+  "scope": {
+    "dispute_types": ["DESCRIPTION_MISMATCH"],
+    "listing_categories": ["USED_LAPTOP"]
+  },
+  "authority": {
+    "automatic_final_decision_allowed": false,
+    "human_review_required": true,
+    "auto_suggestion_refund_limit": {
+      "currency": "CNY",
+      "amount_minor": 100000
+    },
+    "allowed_outcomes": [
+      "RETURN_AND_FULL_REFUND",
+      "PARTIAL_REFUND",
+      "REJECT_CLAIM",
+      "REQUEST_MORE_EVIDENCE",
+      "RELEASE_FUNDS",
+      "ESCALATE_TO_HUMAN"
+    ],
+    "mandatory_human_review_triggers": [
+      {
+        "code": "SERIAL_OR_HARDWARE_SWAP_DISPUTE",
+        "description": "设备或主板序列号冲突，或任一方指控调包、更换硬件。"
+      },
+      {
+        "code": "EVIDENCE_AUTHENTICITY_CONTESTED",
+        "description": "关键证据的真实性或完整性受到合理质疑。"
+      },
+      {
+        "code": "SUGGESTION_LIMIT_EXCEEDED",
+        "description": "建议退款金额超过本版本自动建议高风险阈值。"
+      },
+      {
+        "code": "FRAUD_OR_SAFETY_ALLEGATION",
+        "description": "案件包含欺诈、非法来源、伪造证据或人身安全指控。"
+      }
+    ]
+  },
+  "evidence_requirements": [
+    {
+      "requirement_id": "ER-LISTING-PROMISE",
+      "applies_to_claim_types": ["CONFIG_MISMATCH", "FUNCTIONAL_DEFECT", "REPAIR_HISTORY_MISMATCH"],
+      "description": "交易前锁定的商品页或聊天快照能够证明卖方对争议属性作出明确描述或承诺。",
+      "accepted_evidence_types": ["LISTING_SNAPSHOT", "CHAT_SNAPSHOT"],
+      "minimum_independent_sources": 1,
+      "mandatory_for_finding": true
+    },
+    {
+      "requirement_id": "ER-RECEIVED-CONDITION",
+      "applies_to_claim_types": ["CONFIG_MISMATCH", "FUNCTIONAL_DEFECT", "REPAIR_HISTORY_MISMATCH"],
+      "description": "签收后合理时间内形成的材料能够显示收到设备的实际状态。",
+      "accepted_evidence_types": ["DEVICE_REPORT", "PHOTO", "VIDEO", "DOCUMENT"],
+      "minimum_independent_sources": 1,
+      "mandatory_for_finding": true
+    },
+    {
+      "requirement_id": "ER-DEVICE-IDENTITY",
+      "applies_to_claim_types": ["SERIAL_MISMATCH", "HARDWARE_SWAP_ALLEGATION", "CONFIG_MISMATCH"],
+      "description": "证据可把检测对象与涉案交易设备关联，例如整机序列号、主板序列号或连续开箱记录。",
+      "accepted_evidence_types": ["LISTING_SNAPSHOT", "DEVICE_REPORT", "PHOTO", "VIDEO"],
+      "minimum_independent_sources": 1,
+      "mandatory_for_finding": true
+    },
+    {
+      "requirement_id": "ER-SELLER-PRESHIPMENT",
+      "applies_to_claim_types": ["HARDWARE_SWAP_ALLEGATION", "CONFIG_MISMATCH"],
+      "description": "卖方反证应形成于发货前，并可识别涉案设备和当时配置。",
+      "accepted_evidence_types": ["DEVICE_REPORT", "PHOTO", "VIDEO", "SHIPMENT_EVENT"],
+      "minimum_independent_sources": 1,
+      "mandatory_for_finding": false
+    }
+  ],
+  "rules": [
+    {
+      "rule_id": "DM-DEF-01",
+      "title": "描述不符的构成",
+      "category": "DEFINITION",
+      "text": "交易前商品页、商品照片或聊天中的明确描述，与买方收到设备的关键配置、功能状态或维修历史存在实质差异时，可构成描述不符；无关紧要或不影响通常交易决定的差异不视为实质差异。",
+      "conditions": [
+        "存在可锁定的交易前明确描述",
+        "存在收到设备实际状态的证据",
+        "差异涉及关键属性并具有实质性"
+      ],
+      "required_evidence_refs": ["ER-LISTING-PROMISE", "ER-RECEIVED-CONDITION"],
+      "allowed_outcomes": ["RETURN_AND_FULL_REFUND", "PARTIAL_REFUND", "REJECT_CLAIM", "REQUEST_MORE_EVIDENCE"],
+      "priority": 100,
+      "guard_checks": ["FACTS_HAVE_EVIDENCE", "ALL_MATERIAL_CLAIMS_ADDRESSED"]
+    },
+    {
+      "rule_id": "DM-FILING-01",
+      "title": "争议申报时限",
+      "category": "FILING",
+      "text": "买方原则上应在物流签收后 72 小时内提出描述不符争议；因检测条件、平台故障或其他合理原因延迟的，必须由人工审核是否受理。",
+      "conditions": ["签收时间可确定"],
+      "required_evidence_refs": [],
+      "allowed_outcomes": ["REQUEST_MORE_EVIDENCE", "ESCALATE_TO_HUMAN", "REJECT_CLAIM"],
+      "priority": 90,
+      "guard_checks": ["FILING_DEADLINE_CHECKED"]
+    },
+    {
+      "rule_id": "DM-BURDEN-01",
+      "title": "买方初步举证",
+      "category": "BURDEN",
+      "text": "买方应先证明卖方作出的明确描述、收到设备的实际状态以及检测对象与涉案设备的关联。仅有买方单方陈述不足以认定描述不符。",
+      "conditions": ["买方主张描述不符"],
+      "required_evidence_refs": ["ER-LISTING-PROMISE", "ER-RECEIVED-CONDITION"],
+      "allowed_outcomes": ["REQUEST_MORE_EVIDENCE", "REJECT_CLAIM", "RETURN_AND_FULL_REFUND"],
+      "priority": 95,
+      "guard_checks": ["BUYER_INITIAL_BURDEN_CHECKED", "DEVICE_IDENTITY_LINK_CHECKED"]
+    },
+    {
+      "rule_id": "DM-BURDEN-02",
+      "title": "卖方反证",
+      "category": "BURDEN",
+      "text": "买方完成初步举证后，卖方主张发货时配置相符或买方更换硬件的，应提交发货前形成且能关联涉案设备的配置、序列号或连续记录。推测或单方陈述不能单独证明买方调包。",
+      "conditions": ["买方完成初步举证", "卖方提出相符或调包抗辩"],
+      "required_evidence_refs": ["ER-SELLER-PRESHIPMENT", "ER-DEVICE-IDENTITY"],
+      "allowed_outcomes": ["REJECT_CLAIM", "REQUEST_MORE_EVIDENCE", "ESCALATE_TO_HUMAN"],
+      "priority": 94,
+      "guard_checks": ["SELLER_REBUTTAL_SOURCE_CHECKED", "NO_UNSUPPORTED_SWAP_FINDING"]
+    },
+    {
+      "rule_id": "DM-EVIDENCE-01",
+      "title": "设备身份冲突",
+      "category": "EVIDENCE",
+      "text": "商品照片、卖方发货记录和买方检测材料中的设备或主板序列号冲突时，不得仅凭冲突自动推定任何一方调包；必须检查时间、来源和连续性并转人工审核。",
+      "conditions": ["存在设备或主板序列号冲突"],
+      "required_evidence_refs": ["ER-DEVICE-IDENTITY"],
+      "allowed_outcomes": ["REQUEST_MORE_EVIDENCE", "ESCALATE_TO_HUMAN"],
+      "priority": 110,
+      "guard_checks": ["SERIAL_CONFLICT_ESCALATED", "NO_UNSUPPORTED_SWAP_FINDING"]
+    },
+    {
+      "rule_id": "DM-REMEDY-01",
+      "title": "实质描述不符的处置",
+      "category": "REMEDY",
+      "text": "关键配置、功能状态或维修历史存在实质描述不符，且没有证据证明差异由买方在收货后造成时，可建议退货并按实付金额全额退款。",
+      "conditions": ["实质描述不符成立", "差异不是由买方造成"],
+      "required_evidence_refs": ["ER-LISTING-PROMISE", "ER-RECEIVED-CONDITION"],
+      "allowed_outcomes": ["RETURN_AND_FULL_REFUND"],
+      "priority": 85,
+      "guard_checks": ["REFUND_NOT_OVERPAID_AMOUNT", "OUTCOME_ALLOWED_BY_POLICY"]
+    },
+    {
+      "rule_id": "DM-REMEDY-02",
+      "title": "部分退款",
+      "category": "REMEDY",
+      "text": "部分退款仅在买卖双方对保留商品和具体金额作出明确一致表示时建议；不得由 Agent 单方面估算折价。",
+      "conditions": ["买方愿意保留商品", "双方明确同意部分退款金额"],
+      "required_evidence_refs": [],
+      "allowed_outcomes": ["PARTIAL_REFUND"],
+      "priority": 84,
+      "guard_checks": ["PARTIAL_REFUND_CONSENT_EXISTS", "REFUND_NOT_OVERPAID_AMOUNT"]
+    },
+    {
+      "rule_id": "DM-SHIPPING-01",
+      "title": "退货运费",
+      "category": "SHIPPING",
+      "text": "经认定存在实质描述不符的退货，合理退货运费由卖方承担；未认定描述不符时，不得依据本条要求卖方承担运费。",
+      "conditions": ["退货原因为实质描述不符"],
+      "required_evidence_refs": [],
+      "allowed_outcomes": ["RETURN_AND_FULL_REFUND"],
+      "priority": 80,
+      "guard_checks": ["SHIPPING_PAYER_MATCHES_FINDING"]
+    },
+    {
+      "rule_id": "DM-INSUFFICIENT-01",
+      "title": "证据不足",
+      "category": "INSUFFICIENT_EVIDENCE",
+      "text": "关键事实证据不足但可通过合理补充取得时，应定向补问；达到补问上限、证据已无法取得或补充后仍不足时，可建议驳回主张或转人工，不得把未知事实写成已认定事实。",
+      "conditions": ["关键事实尚未达到认定要求"],
+      "required_evidence_refs": [],
+      "allowed_outcomes": ["REQUEST_MORE_EVIDENCE", "REJECT_CLAIM", "ESCALATE_TO_HUMAN"],
+      "priority": 105,
+      "guard_checks": ["NO_UNSUPPORTED_ESTABLISHED_FACT", "QUESTION_ROUND_LIMIT_CHECKED"]
+    },
+    {
+      "rule_id": "DM-ESCALATE-01",
+      "title": "强制人工审核",
+      "category": "ESCALATION",
+      "text": "发生序列号或调包争议、关键证据真实性争议、欺诈或安全指控、政策版本异常，或退款建议超过本版本高风险阈值时，必须由人工审核。",
+      "conditions": ["至少一个强制人工触发条件成立"],
+      "required_evidence_refs": [],
+      "allowed_outcomes": ["ESCALATE_TO_HUMAN"],
+      "priority": 120,
+      "guard_checks": ["MANDATORY_HUMAN_REVIEW_ENFORCED"]
+    },
+    {
+      "rule_id": "DM-APPEAL-01",
+      "title": "申诉与重开",
+      "category": "APPEAL",
+      "text": "当事人可在处置结果送达后 72 小时内申诉。新证据、关键证据遗漏、错误政策版本或重大执行错误可触发重开；仅重复原陈述可以维持原结果。",
+      "conditions": ["案件已有处置结果", "申诉说明具体理由"],
+      "required_evidence_refs": [],
+      "allowed_outcomes": ["ESCALATE_TO_HUMAN"],
+      "priority": 70,
+      "guard_checks": ["APPEAL_DEADLINE_CHECKED", "PRIOR_DECISION_PRESERVED"]
+    }
+  ],
+  "source": {
+    "kind": "SYNTHETIC_DEMO_POLICY",
+    "notice": "本规则仅用于软件演示和测试，不代表任何现实平台规则，也不构成法律意见。"
+  }
+}

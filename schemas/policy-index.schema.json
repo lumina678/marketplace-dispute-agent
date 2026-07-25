@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://demo-marketplace.local/schemas/policy-index.schema.json",
+  "title": "Policy Version Index",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "selection_basis", "policies"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "selection_basis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transaction_time_field", "interval_semantics", "on_zero_matches", "on_multiple_matches"],
+      "properties": {
+        "transaction_time_field": { "type": "string", "const": "paid_at" },
+        "interval_semantics": { "type": "string", "const": "[effective_from,effective_to)" },
+        "on_zero_matches": { "type": "string", "const": "ESCALATE_TO_HUMAN" },
+        "on_multiple_matches": { "type": "string", "const": "ESCALATE_TO_HUMAN" }
+      }
+    },
+    "policies": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["policy_id", "version", "status", "effective_from", "effective_to", "path"],
+        "properties": {
+          "policy_id": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]+$" },
+          "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+          "status": { "enum": ["ACTIVE", "RETIRED", "DRAFT"] },
+          "effective_from": { "type": "string", "format": "date-time" },
+          "effective_to": {
+            "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }]
+          },
+          "path": { "type": "string", "pattern": "^[a-zA-Z0-9_./-]+\\.json$" }
+        }
+      }
+    }
+  }
+}
