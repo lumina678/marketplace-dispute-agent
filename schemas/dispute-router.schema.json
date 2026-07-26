@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://demo-marketplace.local/schemas/dispute-router.schema.json",
+  "title": "Deterministic Claim Router Configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "router_id",
+    "version",
+    "thresholds",
+    "default_claim_types",
+    "platform_reason_codes",
+    "keyword_rules"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "router_id": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]+$" },
+    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "thresholds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minimum_rule_confidence", "ambiguity_margin", "model_candidate_requires_human"],
+      "properties": {
+        "minimum_rule_confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "ambiguity_margin": { "type": "number", "minimum": 0, "maximum": 1 },
+        "model_candidate_requires_human": { "type": "boolean", "const": true }
+      }
+    },
+    "default_claim_types": {
+      "type": "object",
+      "additionalProperties": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]+$" }
+    },
+    "platform_reason_codes": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/RouteTarget" }
+    },
+    "keyword_rules": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/KeywordRule" }
+    }
+  },
+  "$defs": {
+    "IssueType": {
+      "enum": [
+        "DESCRIPTION_MISMATCH",
+        "MISSING_PARTS",
+        "EMPTY_PACKAGE",
+        "SHIPPING_DAMAGE",
+        "COUNTERFEIT",
+        "OTHER"
+      ]
+    },
+    "RouteTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issue_type", "claim_type", "confidence"],
+      "properties": {
+        "issue_type": { "$ref": "#/$defs/IssueType" },
+        "claim_type": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]+$" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "KeywordRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rule_id", "issue_type", "claim_type", "confidence", "phrases"],
+      "properties": {
+        "rule_id": { "type": "string", "pattern": "^[A-Z][A-Z0-9_-]+$" },
+        "issue_type": { "$ref": "#/$defs/IssueType" },
+        "claim_type": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]+$" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "phrases": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

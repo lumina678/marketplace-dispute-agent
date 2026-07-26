@@ -44,6 +44,7 @@ def test_schema_and_seed_are_complete_and_idempotent(context) -> None:
         "approvals",
         "case_events",
         "open_questions",
+        "claim_routing_decisions",
     }.issubset(table_names)
 
 

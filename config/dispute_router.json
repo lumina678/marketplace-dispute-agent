@@ -1,0 +1,87 @@
+{
+  "schema_version": "1.0.0",
+  "router_id": "marketplace.claim_router",
+  "version": "1.0.0",
+  "thresholds": {
+    "minimum_rule_confidence": 0.75,
+    "ambiguity_margin": 0.08,
+    "model_candidate_requires_human": true
+  },
+  "default_claim_types": {
+    "DESCRIPTION_MISMATCH": "OTHER_DESCRIPTION_MISMATCH",
+    "MISSING_PARTS": "MISSING_ACCESSORY",
+    "EMPTY_PACKAGE": "PACKAGE_EMPTY",
+    "SHIPPING_DAMAGE": "ITEM_DAMAGED_IN_TRANSIT",
+    "COUNTERFEIT": "COUNTERFEIT_ALLEGATION",
+    "OTHER": "OTHER"
+  },
+  "platform_reason_codes": {
+    "ITEM_NOT_AS_DESCRIBED": {
+      "issue_type": "DESCRIPTION_MISMATCH",
+      "claim_type": "OTHER_DESCRIPTION_MISMATCH",
+      "confidence": 0.99
+    },
+    "MISSING_ACCESSORY": {
+      "issue_type": "MISSING_PARTS",
+      "claim_type": "MISSING_ACCESSORY",
+      "confidence": 0.99
+    },
+    "MISSING_COMPONENT": {
+      "issue_type": "MISSING_PARTS",
+      "claim_type": "MISSING_COMPONENT",
+      "confidence": 0.99
+    },
+    "EMPTY_PACKAGE": {
+      "issue_type": "EMPTY_PACKAGE",
+      "claim_type": "PACKAGE_EMPTY",
+      "confidence": 0.99
+    },
+    "DAMAGED_IN_TRANSIT": {
+      "issue_type": "SHIPPING_DAMAGE",
+      "claim_type": "ITEM_DAMAGED_IN_TRANSIT",
+      "confidence": 0.99
+    },
+    "SUSPECTED_COUNTERFEIT": {
+      "issue_type": "COUNTERFEIT",
+      "claim_type": "COUNTERFEIT_ALLEGATION",
+      "confidence": 0.99
+    }
+  },
+  "keyword_rules": [
+    {
+      "rule_id": "ROUTE-COUNTERFEIT",
+      "issue_type": "COUNTERFEIT",
+      "claim_type": "COUNTERFEIT_ALLEGATION",
+      "confidence": 0.97,
+      "phrases": ["假货", "仿品", "山寨", "非正品", "伪造品牌", "高仿"]
+    },
+    {
+      "rule_id": "ROUTE-EMPTY-PACKAGE",
+      "issue_type": "EMPTY_PACKAGE",
+      "claim_type": "PACKAGE_EMPTY",
+      "confidence": 0.96,
+      "phrases": ["空包", "空盒", "包裹是空的", "包裹里面是空的", "没有商品", "只有包装"]
+    },
+    {
+      "rule_id": "ROUTE-SHIPPING-DAMAGE",
+      "issue_type": "SHIPPING_DAMAGE",
+      "claim_type": "ITEM_DAMAGED_IN_TRANSIT",
+      "confidence": 0.93,
+      "phrases": ["运输损坏", "快递损坏", "物流损坏", "运输途中损坏", "包装破损", "包裹破损", "挤压变形", "运输进水", "快递摔坏"]
+    },
+    {
+      "rule_id": "ROUTE-MISSING-PARTS",
+      "issue_type": "MISSING_PARTS",
+      "claim_type": "MISSING_ACCESSORY",
+      "confidence": 0.91,
+      "phrases": ["缺少配件", "少了配件", "没有充电器", "缺充电器", "缺少线材", "缺少部件", "配件不全", "数量少了", "少发了"]
+    },
+    {
+      "rule_id": "ROUTE-DESCRIPTION-MISMATCH",
+      "issue_type": "DESCRIPTION_MISMATCH",
+      "claim_type": "OTHER_DESCRIPTION_MISMATCH",
+      "confidence": 0.86,
+      "phrases": ["描述不符", "与描述不符", "与商品描述不一致", "实物不符", "配置不符", "型号不符", "内存不符", "成色不符", "功能不正常", "维修过", "序列号不一致"]
+    }
+  ]
+}

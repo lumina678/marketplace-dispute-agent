@@ -2,7 +2,7 @@
 
 本项目是一个面向二手交易争议的多 Agent 调查与裁决辅助系统，通过双方观点分离、证据链构建、版本化规则检索、人工审批和幂等执行，处理普通客服流程无法解决的复杂案件。
 
-> 当前仓库完成了实施计划的前十八步：基础规格、SQLite 数据层、本地 MCP 工具层、确定性案件编排器、多 Agent 调查、补证恢复、裁决草稿、确定性 Decision Guard、人工审核、模拟执行与回读、申诉重开和二次调查、可重复评测 Harness、案件工作台、Claim 级争议分类和版本化 Skill 框架。系统不替代法院、仲裁机构或平台人工裁决员。
+> 当前仓库完成了实施计划的前十九步：基础规格、SQLite 数据层、本地 MCP 工具层、确定性案件编排器、多 Agent 调查、补证恢复、裁决草稿、确定性 Decision Guard、人工审核、模拟执行与回读、申诉重开和二次调查、可重复评测 Harness、案件工作台、Claim 级争议分类、版本化 Skill 框架和确定性 Router。系统不替代法院、仲裁机构或平台人工裁决员。
 
 ## 当前 MVP
 
@@ -19,7 +19,7 @@
 | 2. 状态机 | [`docs/CASE_STATE_MACHINE.md`](docs/CASE_STATE_MACHINE.md)、[`config/case_state_machine.json`](config/case_state_machine.json) | 定义案件生命周期、流转条件、角色和恢复语义 |
 | 3. 统一 Schema | [`schemas/`](schemas/) | 约束案件材料、Agent 输出、状态机和规则版本 |
 | 4. 规则库 | [`policies/`](policies/) | 提供两个互不重叠的“描述不符”规则版本及确定性选版方法 |
-| 5. 数据层 | [`src/dispute_agent/models.py`](src/dispute_agent/models.py)、[`alembic/`](alembic/) | 17 张 SQLite 表、Alembic 迁移和 5 个可重复导入的种子案件 |
+| 5. 数据层 | [`src/dispute_agent/models.py`](src/dispute_agent/models.py)、[`alembic/`](alembic/) | 18 张 SQLite 表、Alembic 迁移和 5 个可重复导入的种子案件 |
 | 6. 工具层 | [`src/dispute_agent/services/tools.py`](src/dispute_agent/services/tools.py)、[`src/dispute_agent/mcp_server.py`](src/dispute_agent/mcp_server.py) | 12 个带权限、预算、审计和案件隔离的本地工具 |
 | 7. 编排器 | [`src/dispute_agent/services/orchestrator.py`](src/dispute_agent/services/orchestrator.py) | 状态机驱动、checkpoint、暂停恢复、预算升级和事件重放 |
 | 8. 调查 Agent | [`src/dispute_agent/agents/runtime.py`](src/dispute_agent/agents/runtime.py) | 买卖双方独立分析、证据审查、时间线和版本化政策引用 |
@@ -33,8 +33,9 @@
 | 16. 案件工作台 | [`src/dispute_agent/services/workbench.py`](src/dispute_agent/services/workbench.py)、[`web/workbench.html`](web/workbench.html) | 聚合主张、时间线、证据关系图、规则、Agent 轨迹、审核、执行和申诉，提供可演示的案件视图 |
 | 17. 争议分类体系 | [`src/dispute_agent/dispute_types.py`](src/dispute_agent/dispute_types.py)、[`alembic/versions/2e4c6a8b0d12_add_claim_routing_and_skill_binding.py`](alembic/versions/2e4c6a8b0d12_add_claim_routing_and_skill_binding.py) | 为每条 Claim 持久化争议类型、路由来源、理由、置信度、状态和版本化 Skill 绑定，并锁入 Case Run checkpoint |
 | 18. Skill 框架 | [`src/dispute_agent/skills/`](src/dispute_agent/skills/)、[`docs/STEPS_17_18.md`](docs/STEPS_17_18.md) | 提供不可变 Skill 合同、注册表和描述不符、缺件、空包、运输损坏四套文本调查手册，并注入 Agent 上下文 |
+| 19. 确定性 Router | [`src/dispute_agent/services/claim_router.py`](src/dispute_agent/services/claim_router.py)、[`config/dispute_router.json`](config/dispute_router.json)、[`docs/STEPS_19.md`](docs/STEPS_19.md) | 按用户声明、平台原因码和版本化文本规则路由 Claim，保存追加式审计历史，模型候选、歧义、假货和未知类型固定转人工 |
 
-第五至第七步的详细约定见 [`docs/STEPS_5_7.md`](docs/STEPS_5_7.md)，第八至第十步见 [`docs/STEPS_8_10.md`](docs/STEPS_8_10.md)，第十一至第十二步见 [`docs/STEPS_11_12.md`](docs/STEPS_11_12.md)，第十三至第十四步见 [`docs/STEPS_13_14.md`](docs/STEPS_13_14.md)，第十五至第十六步见 [`docs/STEPS_15_16.md`](docs/STEPS_15_16.md)，第十七至第十八步见 [`docs/STEPS_17_18.md`](docs/STEPS_17_18.md)。默认使用无需 API Key 的 `rule-based-baseline-v1`，自有模型接入与故障语义见 [`docs/MODEL_INTEGRATION.md`](docs/MODEL_INTEGRATION.md)。
+第五至第七步的详细约定见 [`docs/STEPS_5_7.md`](docs/STEPS_5_7.md)，第八至第十步见 [`docs/STEPS_8_10.md`](docs/STEPS_8_10.md)，第十一至第十二步见 [`docs/STEPS_11_12.md`](docs/STEPS_11_12.md)，第十三至第十四步见 [`docs/STEPS_13_14.md`](docs/STEPS_13_14.md)，第十五至第十六步见 [`docs/STEPS_15_16.md`](docs/STEPS_15_16.md)，第十七至第十八步见 [`docs/STEPS_17_18.md`](docs/STEPS_17_18.md)，第十九步见 [`docs/STEPS_19.md`](docs/STEPS_19.md)。默认使用无需 API Key 的 `rule-based-baseline-v1`，自有模型接入与故障语义见 [`docs/MODEL_INTEGRATION.md`](docs/MODEL_INTEGRATION.md)。
 
 ## 本地运行
 

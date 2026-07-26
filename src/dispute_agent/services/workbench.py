@@ -14,6 +14,7 @@ from dispute_agent.models import (
     CaseEvent,
     CaseRun,
     Claim,
+    ClaimRoutingDecision,
     Decision,
     DecisionGuardReport,
     Dispute,
@@ -27,7 +28,7 @@ from dispute_agent.models import (
 )
 from dispute_agent.serialization import jsonable
 from dispute_agent.services.policy import PolicyService
-from dispute_agent.services.claim_routing import claim_routing_payload
+from dispute_agent.services.claim_routing import case_routing_summary, claim_routing_payload
 
 
 class WorkbenchService:
@@ -84,6 +85,13 @@ class WorkbenchService:
             questions = list(
                 session.scalars(select(OpenQuestion).where(OpenQuestion.dispute_id == case_id).order_by(OpenQuestion.created_at))
             )
+            routing_decisions = list(
+                session.scalars(
+                    select(ClaimRoutingDecision)
+                    .where(ClaimRoutingDecision.dispute_id == case_id)
+                    .order_by(ClaimRoutingDecision.claim_id, ClaimRoutingDecision.decision_version)
+                )
+            )
             policy = None
             if dispute.policy_id and dispute.policy_version:
                 policy = PolicyService(session).get_version(dispute.policy_id, dispute.policy_version)
@@ -133,6 +141,32 @@ class WorkbenchService:
                         }
                         for item in claims
                     ],
+                    "routing": {
+                        **case_routing_summary(claims),
+                        "history": [
+                            {
+                                "decision_id": item.id,
+                                "decision_version": item.decision_version,
+                                "claim_id": item.claim_id,
+                                "router_id": item.router_id,
+                                "router_version": item.router_version,
+                                "issue_type": item.issue_type,
+                                "claim_type": item.claim_type,
+                                "routing_source": item.routing_source,
+                                "routing_status": item.routing_status,
+                                "confidence": item.confidence,
+                                "reason": item.reason,
+                                "matched_signals": item.matched_signals_json,
+                                "skill_name": item.skill_name,
+                                "skill_version": item.skill_version,
+                                "requires_human_confirmation": item.requires_human_confirmation,
+                                "content_sha256": item.content_sha256,
+                                "actor_id": item.actor_id,
+                                "created_at": item.created_at,
+                            }
+                            for item in routing_decisions
+                        ],
+                    },
                     "listing_snapshot": {
                         "snapshot_id": listing.id,
                         "payload": listing.payload_json,

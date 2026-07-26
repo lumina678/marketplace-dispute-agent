@@ -516,6 +516,7 @@
             <span class="soft-chip">直接证据：${directEvidence} 项</span>
             <span class="soft-chip">立场：${esc(assessment?.position || '待判断')}</span>
             <span class="soft-chip">Skill：${esc(binding?.skill_name ? `${binding.skill_name}@${binding.skill_version}` : '待路由')}</span>
+            <span class="soft-chip">路由：${esc(binding?.routing_status || 'UNROUTED')}${binding?.routing_confidence != null ? ` · ${Math.round(binding.routing_confidence * 100)}%` : ''}</span>
           </div>
         </article>`;
     }
@@ -612,7 +613,8 @@
       const outcome = decision.outcome ? outcomeLabels[decision.outcome] || decision.outcome : '等待 Agent 综合裁决';
       const guard = (data.review?.guard_reports || []).at(-1);
       const findings = decision.claim_findings || [];
-      const actionLabel = primaryActionLabel(data.case.state);
+      const primaryClaim = (data.claims || []).find(item => item.material) || (data.claims || [])[0];
+      const actionLabel = primaryActionLabel(data);
       const elapsed = workflowStartedAt ? Math.max(0, Math.floor((Date.now() - workflowStartedAt) / 1000)) : 0;
       const phaseStatus = actionBusy
         ? `${run ? phaseLabels[run.phase] || run.phase : '创建调查运行'} · ${elapsed}s`
@@ -633,7 +635,8 @@
           <section class="dark-section">
             <div class="dark-section-index">01&nbsp; 争议焦点</div>
             <h3>${esc((data.claims || [])[0]?.statement || '尚未提取核心主张')}</h3>
-            <p>${esc(conflict?.description || openIssue)}</p>
+            <div class="rule-tags"><span>${esc(primaryClaim?.issue_type || 'OTHER')}</span><span>${esc(primaryClaim?.routing_status || 'UNROUTED')}</span><span>${esc(primaryClaim?.skill_name ? `${primaryClaim.skill_name}@${primaryClaim.skill_version}` : '等待人工绑定 Skill')}</span></div>
+            <p>${esc(primaryClaim?.routing_reason || conflict?.description || openIssue)}</p>
           </section>
           <div class="dark-grid">
             <section class="dark-section">
@@ -665,7 +668,10 @@
         </aside>`;
     }
 
-    function primaryActionLabel(state) {
+    function primaryActionLabel(data) {
+      const state = data.case.state;
+      const needsRoutingReview = (data.claims || []).some(item => item.material && item.routing_status === 'NEEDS_HUMAN');
+      if (needsRoutingReview && ['SUBMITTED','EVIDENCE_LOCKED'].includes(state)) return '等待人工确认争议类型';
       if (['SUBMITTED','EVIDENCE_LOCKED'].includes(state)) return '启动多 Agent 调查';
       if (state === 'UNDER_INVESTIGATION' || state === 'READY_FOR_REVIEW') return '继续 Agent 调查';
       if (['WAITING_FOR_BUYER','WAITING_FOR_SELLER'].includes(state)) return '查看补证要求';
@@ -771,6 +777,10 @@
     async function runPrimaryAction() {
       if (!currentData || actionBusy) return;
       const state = currentData.case.state;
+      const needsRoutingReview = (currentData.claims || []).some(item => item.material && item.routing_status === 'NEEDS_HUMAN');
+      if (needsRoutingReview && ['SUBMITTED','EVIDENCE_LOCKED'].includes(state)) {
+        return showToast('当前 Claim 存在冲突、低置信度或高风险路由，请由审核员确认争议类型后再启动 Agent。', true);
+      }
       if (['WAITING_FOR_BUYER','WAITING_FOR_SELLER'].includes(state)) {
         document.querySelector('.material-bar')?.scrollIntoView({behavior:'smooth', block:'center'});
         return showToast('请根据底部补证要求提交新证据，再恢复调查。');
