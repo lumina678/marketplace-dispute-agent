@@ -26,6 +26,13 @@ from dispute_agent.services.appeals import AppealService
 from dispute_agent.services.evaluation import EvaluationService
 from dispute_agent.services.tools import ToolService
 from dispute_agent.services.workbench import WorkbenchService
+from dispute_agent.services.claim_router import ClaimRoutingService
+from dispute_agent.routing_schemas import (
+    ClaimRoutingHint,
+    RouteCaseRequest,
+    RouteClaimRequest,
+    RoutingOverrideRequest,
+)
 from dispute_agent.config import PROJECT_ROOT, Settings, get_settings
 from dispute_agent.dispute_types import DisputeType, RoutingSource, RoutingStatus
 from dispute_agent.skills import get_skill_registry
@@ -134,8 +141,10 @@ def create_app(
         version="0.1.0",
         description="Multi-agent investigation and adjudication support for second-hand marketplace disputes.",
     )
+    skill_registry = get_skill_registry()
     tool_service = ToolService(session_factory)
-    orchestrator = CaseOrchestrator(session_factory, settings=settings)
+    routing = ClaimRoutingService(session_factory, settings=settings, skill_registry=skill_registry)
+    orchestrator = CaseOrchestrator(session_factory, settings=settings, routing_service=routing)
     runtime = AgentRuntime(session_factory, backend=backend, tools=tool_service)
     decision_guard = DecisionGuard(session_factory)
     workflow = InvestigationWorkflow(
@@ -165,9 +174,9 @@ def create_app(
     evaluation = EvaluationService(session_factory)
     workbench = WorkbenchService(session_factory)
     demo_cases = DemoCaseService(session_factory)
-    skill_registry = get_skill_registry()
     app.state.generation_backend = backend
     app.state.skill_registry = skill_registry
+    app.state.claim_router = routing
 
     def get_session() -> Session:
         session = session_factory()
@@ -224,6 +233,51 @@ def create_app(
     @app.get("/skills/{skill_name}")
     def get_skill(skill_name: str, version: str | None = Query(default=None)) -> dict[str, Any]:
         return skill_registry.get(skill_name, version).manifest.model_dump(mode="json")
+
+    @app.get("/cases/{case_id}/routing")
+    def get_case_routing(case_id: str) -> dict[str, Any]:
+        return jsonable(routing.get_case_routing(case_id))
+
+    @app.post("/cases/{case_id}/routing")
+    def route_case(case_id: str, request: RouteCaseRequest) -> dict[str, Any]:
+        hints = {
+            item.claim_id: ClaimRoutingHint.model_validate(item.model_dump(exclude={"claim_id"}))
+            for item in request.claim_hints
+        }
+        return jsonable(
+            routing.route_case(
+                case_id,
+                hints=hints,
+                actor_id=request.actor_id,
+                force_recompute=request.force_recompute,
+            )
+        )
+
+    @app.post("/cases/{case_id}/claims/{claim_id}/routing")
+    def route_claim(case_id: str, claim_id: str, request: RouteClaimRequest) -> dict[str, Any]:
+        hint = ClaimRoutingHint.model_validate(request.model_dump(exclude={"actor_id", "force_recompute"}))
+        return jsonable(
+            routing.route_claim(
+                case_id,
+                claim_id,
+                hint=hint,
+                actor_id=request.actor_id,
+                force_recompute=request.force_recompute,
+            )
+        )
+
+    @app.post("/cases/{case_id}/claims/{claim_id}/routing-override")
+    def override_claim_routing(case_id: str, claim_id: str, request: RoutingOverrideRequest) -> dict[str, Any]:
+        return jsonable(
+            routing.override_claim(
+                case_id,
+                claim_id,
+                reviewer_id=request.reviewer_id,
+                issue_type=request.issue_type,
+                claim_type=request.claim_type,
+                reason=request.reason,
+            )
+        )
 
     @app.get("/cases")
     def list_cases(

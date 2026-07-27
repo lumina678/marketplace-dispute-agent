@@ -189,6 +189,47 @@ class Claim(Base):
     )
 
 
+class ClaimRoutingDecision(Base):
+    __tablename__ = "claim_routing_decisions"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    dispute_id: Mapped[str] = mapped_column(ForeignKey("disputes.id", ondelete="CASCADE"), nullable=False)
+    claim_id: Mapped[str] = mapped_column(ForeignKey("claims.id", ondelete="CASCADE"), nullable=False)
+    case_run_id: Mapped[str | None] = mapped_column(ForeignKey("case_runs.id", ondelete="SET NULL"))
+    decision_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    router_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    router_version: Mapped[str] = mapped_column(String(20), nullable=False)
+    issue_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    claim_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    routing_source: Mapped[str] = mapped_column(String(30), nullable=False)
+    routing_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    matched_signals_json: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    skill_name: Mapped[str | None] = mapped_column(String(80))
+    skill_version: Mapped[str | None] = mapped_column(String(20))
+    requires_human_confirmation: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    input_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(AwareDateTime(), default=utc_now, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("claim_id", "decision_version", name="uq_claim_routing_decisions_claim_version"),
+        UniqueConstraint("claim_id", "input_fingerprint", name="uq_claim_routing_decisions_claim_input"),
+        CheckConstraint("decision_version >= 1", name="ck_claim_routing_decisions_version"),
+        CheckConstraint("confidence >= 0 AND confidence <= 1", name="ck_claim_routing_decisions_confidence"),
+        CheckConstraint("length(input_fingerprint) = 64", name="ck_claim_routing_decisions_input_hash"),
+        CheckConstraint("length(content_sha256) = 64", name="ck_claim_routing_decisions_content_hash"),
+        CheckConstraint(
+            "(skill_name IS NULL AND skill_version IS NULL) OR (skill_name IS NOT NULL AND skill_version IS NOT NULL)",
+            name="ck_claim_routing_decisions_skill_pair",
+        ),
+        Index("ix_claim_routing_decisions_dispute_time", "dispute_id", "created_at"),
+        Index("ix_claim_routing_decisions_claim_version", "claim_id", "decision_version"),
+    )
+
+
 class Message(Base):
     __tablename__ = "messages"
 

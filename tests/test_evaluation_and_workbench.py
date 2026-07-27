@@ -52,6 +52,8 @@ def test_workbench_projection_contains_columns_timeline_and_evidence_graph(conte
     workbench = WorkbenchService(context.sessions).get("case_clear_mismatch")
     assert workbench["case"]["state"] == "HUMAN_REVIEW"
     assert workbench["claims"]
+    assert workbench["routing"]["ready_for_investigation"] is True
+    assert workbench["routing"]["skill_bindings"] == ["description-mismatch@1.0.0"]
     assert workbench["evidence"]
     assert workbench["timeline"]
     assert workbench["recommendation"]["outcome"] == "RETURN_AND_FULL_REFUND"

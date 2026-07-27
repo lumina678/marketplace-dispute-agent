@@ -38,7 +38,7 @@ from dispute_agent.models import (
 )
 from dispute_agent.serialization import content_hash, jsonable, summarize
 from dispute_agent.services.policy import PolicyService
-from dispute_agent.services.claim_routing import claim_routing_payload
+from dispute_agent.services.claim_routing import case_routing_summary, claim_routing_payload
 
 
 READ_ACTORS = {
@@ -381,6 +381,7 @@ class ToolService:
                 "basis_field": "paid_at",
                 "basis_time": dispute.policy_basis_time,
             } if dispute.policy_id else None,
+            "routing": case_routing_summary(claims),
             "active_run": {
                 "case_run_id": run.id,
                 "run_number": run.run_number,

@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     database_url: str = f"sqlite:///{PROJECT_ROOT / 'data' / 'dispute_agent.db'}"
     policy_directory: Path = PROJECT_ROOT / "policies"
     state_machine_path: Path = PROJECT_ROOT / "config" / "case_state_machine.json"
+    router_config_path: Path = PROJECT_ROOT / "config" / "dispute_router.json"
     max_question_rounds: int = 3
     default_tool_call_budget: int = 60
     default_token_budget: int = 40_000

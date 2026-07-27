@@ -175,6 +175,32 @@ def validate_policies() -> tuple[dict[str, Any], dict[tuple[str, str], dict[str,
     return index, policies
 
 
+def validate_router() -> dict[str, Any]:
+    router = load_json(ROOT / "config" / "dispute_router.json")
+    dispute_types = {
+        "DESCRIPTION_MISMATCH",
+        "MISSING_PARTS",
+        "EMPTY_PACKAGE",
+        "SHIPPING_DAMAGE",
+        "COUNTERFEIT",
+        "OTHER",
+    }
+    require(set(router["default_claim_types"]) == dispute_types, "Router 默认 Claim 类型未完整覆盖争议分类")
+    require(router["thresholds"]["model_candidate_requires_human"] is True, "模型候选必须经过人工确认")
+    require(0 <= router["thresholds"]["minimum_rule_confidence"] <= 1, "Router 最低置信度无效")
+    require(0 <= router["thresholds"]["ambiguity_margin"] <= 1, "Router 歧义阈值无效")
+    rule_ids = unique((item["rule_id"] for item in router["keyword_rules"]), "Router keyword_rules")
+    for rule in router["keyword_rules"]:
+        require(rule["issue_type"] in dispute_types, f"{rule['rule_id']} 使用未知 issue_type")
+        require(bool(rule["phrases"]), f"{rule['rule_id']} 没有关键词")
+        require(len(set(rule["phrases"])) == len(rule["phrases"]), f"{rule['rule_id']} 有重复关键词")
+    for code, target in router["platform_reason_codes"].items():
+        require(code == code.upper(), f"平台原因码必须大写: {code}")
+        require(target["issue_type"] in dispute_types, f"平台原因码 {code} 使用未知 issue_type")
+    print(f"[PASS] Router：{len(rule_ids)} 条文本规则，模型候选固定进入人工确认")
+    return router
+
+
 def validate_reference_list(values: Iterable[str], allowed: set[str], context: str) -> None:
     unknown = set(values) - allowed
     require(not unknown, f"{context} 引用未知 ID: {sorted(unknown)}")
@@ -314,6 +340,7 @@ def optional_jsonschema_validation() -> None:
 
     validations = [
         ("state-machine.schema.json", ROOT / "config" / "case_state_machine.json"),
+        ("dispute-router.schema.json", ROOT / "config" / "dispute_router.json"),
         ("policy-index.schema.json", POLICIES / "index.json"),
         ("case-file.schema.json", ROOT / "examples" / "laptop_description_mismatch_case.json"),
     ]
@@ -336,6 +363,7 @@ def main() -> int:
         validate_all_json_parses()
         machine = validate_state_machine()
         index, policies = validate_policies()
+        validate_router()
         validate_example(machine, index, policies)
         optional_jsonschema_validation()
     except ValidationFailure as exc:

@@ -15,6 +15,7 @@ from dispute_agent.serialization import content_hash, jsonable
 from dispute_agent.services.policy import PolicyService
 from dispute_agent.services.state_machine import StateMachineService
 from dispute_agent.services.claim_routing import claim_routing_payload
+from dispute_agent.services.claim_router import ClaimRoutingService
 
 
 PHASES = (
@@ -39,14 +40,16 @@ class CaseOrchestrator:
         *,
         settings: Settings | None = None,
         state_machine: StateMachineService | None = None,
+        routing_service: ClaimRoutingService | None = None,
     ):
         self.session_factory = session_factory
         self.settings = settings or get_settings()
         self.state_machine = state_machine or StateMachineService(self.settings.state_machine_path)
+        self.routing_service = routing_service or ClaimRoutingService(session_factory, settings=self.settings)
 
     def start(self, case_id: str, *, actor_id: str = "orchestrator") -> dict[str, Any]:
         with self.session_factory() as session:
-            dispute = session.get(Dispute, case_id)
+            dispute = session.scalar(select(Dispute).where(Dispute.id == case_id).with_for_update())
             if dispute is None:
                 raise NotFoundError(f"案件不存在: {case_id}")
             if dispute.active_case_run_id:
@@ -66,9 +69,21 @@ class CaseOrchestrator:
             if dispute.state not in {"SUBMITTED", "EVIDENCE_LOCKED"}:
                 raise ConflictError(f"案件当前状态不能启动新调查: {dispute.state}")
 
+            routing_summary = self.routing_service.ensure_case_routed_in_session(
+                session,
+                dispute,
+                actor_id=actor_id,
+            )
+            if not routing_summary["ready_for_investigation"]:
+                session.commit()
+                raise ConflictError(
+                    "案件存在未确认或复合 Skill 路由，必须先完成人工分类或拆分 Claim"
+                )
+
             if dispute.state == "SUBMITTED":
+                policy_id = self.routing_service.policy_id_for_summary(routing_summary)
                 policy = PolicyService(session).select_for_transaction(
-                    policy_id="marketplace.description_mismatch",
+                    policy_id=policy_id,
                     paid_at=dispute.transaction.paid_at,
                     dispute_type=dispute.dispute_type,
                     category=dispute.transaction.category,
