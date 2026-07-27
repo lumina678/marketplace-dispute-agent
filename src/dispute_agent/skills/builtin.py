@@ -13,7 +13,7 @@ from dispute_agent.skills.base import (
 )
 
 
-COMMON_CONTEXT = (
+DESCRIPTION_MISMATCH_CONTEXT = (
     "case_state",
     "transaction",
     "listing_snapshot",
@@ -25,7 +25,22 @@ COMMON_CONTEXT = (
     "open_questions",
 )
 
-COMMON_TOOLS = (
+MISSING_PARTS_CONTEXT = DESCRIPTION_MISMATCH_CONTEXT
+
+EMPTY_PACKAGE_CONTEXT = (
+    "case_state",
+    "transaction",
+    "conversation_snapshot",
+    "shipment_timeline",
+    "claims",
+    "evidence",
+    "policy_version",
+    "open_questions",
+)
+
+SHIPPING_DAMAGE_CONTEXT = EMPTY_PACKAGE_CONTEXT
+
+DESCRIPTION_MISMATCH_TOOLS = (
     "case.get_state",
     "transaction.get",
     "listing.get_snapshot",
@@ -37,6 +52,14 @@ COMMON_TOOLS = (
     "case.add_open_question",
     "resolution.create_draft",
 )
+
+MISSING_PARTS_TOOLS = DESCRIPTION_MISMATCH_TOOLS
+
+EMPTY_PACKAGE_TOOLS = tuple(
+    tool_name for tool_name in DESCRIPTION_MISMATCH_TOOLS if tool_name != "listing.get_snapshot"
+)
+
+SHIPPING_DAMAGE_TOOLS = EMPTY_PACKAGE_TOOLS
 
 COMMON_OUTCOMES = (
     "RETURN_AND_FULL_REFUND",
@@ -69,8 +92,8 @@ DESCRIPTION_MISMATCH_MANIFEST = SkillManifest(
         ClaimTypeDefinition(code="HARDWARE_SWAP_ALLEGATION", title="硬件调包指控", description="一方主张对方在交易后更换了设备或硬件。"),
         ClaimTypeDefinition(code="OTHER_DESCRIPTION_MISMATCH", title="其他描述不符", description="其他可明确关联到交易前描述的属性争议。"),
     ),
-    required_context=COMMON_CONTEXT,
-    allowed_tools=COMMON_TOOLS,
+    required_context=DESCRIPTION_MISMATCH_CONTEXT,
+    allowed_tools=DESCRIPTION_MISMATCH_TOOLS,
     evidence_requirements=(
         SkillEvidenceRequirement(
             requirement_id="DM-LISTING-PROMISE",
@@ -134,8 +157,8 @@ MISSING_PARTS_MANIFEST = SkillManifest(
         ClaimTypeDefinition(code="MISSING_COMPONENT", title="部件缺失", description="商品本体的可识别组成部件缺失。"),
         ClaimTypeDefinition(code="QUANTITY_SHORTAGE", title="数量短缺", description="实际收到数量少于商品页或聊天约定数量。"),
     ),
-    required_context=COMMON_CONTEXT,
-    allowed_tools=COMMON_TOOLS,
+    required_context=MISSING_PARTS_CONTEXT,
+    allowed_tools=MISSING_PARTS_TOOLS,
     evidence_requirements=(
         SkillEvidenceRequirement(
             requirement_id="MP-PROMISED-CONTENTS",
@@ -190,8 +213,8 @@ EMPTY_PACKAGE_MANIFEST = SkillManifest(
         ClaimTypeDefinition(code="CONTENT_NOT_RECEIVED", title="未收到商品内容", description="包裹存在但核心交易商品未随包裹交付。"),
         ClaimTypeDefinition(code="WEIGHT_ANOMALY", title="物流重量异常", description="物流节点重量变化与商品是否装入包裹直接相关。"),
     ),
-    required_context=COMMON_CONTEXT,
-    allowed_tools=COMMON_TOOLS,
+    required_context=EMPTY_PACKAGE_CONTEXT,
+    allowed_tools=EMPTY_PACKAGE_TOOLS,
     evidence_requirements=(
         SkillEvidenceRequirement(
             requirement_id="EP-WEIGHT-CHAIN",
@@ -215,17 +238,25 @@ EMPTY_PACKAGE_MANIFEST = SkillManifest(
     question_rules=(
         QuestionRuleDefinition(
             rule_id="EP-Q-WEIGHT",
-            target="EITHER",
+            target="CLAIMANT",
             trigger="物流时间线缺少能够判断包裹内容变化的重量或异常信息。",
             question_template="请补充揽收、运输或签收环节可核实的包裹重量及异常记录。",
             applies_to_claim_types=("PACKAGE_EMPTY", "CONTENT_NOT_RECEIVED", "WEIGHT_ANOMALY"),
             acceptable_evidence_types=("SHIPMENT_EVENT", "DOCUMENT"),
         ),
         QuestionRuleDefinition(
-            rule_id="EP-Q-PACKING-OPENING",
-            target="EITHER",
-            trigger="现有材料不能确定商品是否在封装时装入或在开包前丢失。",
-            question_template="请补充能关联涉案运单的打包或首次开包记录，并说明记录形成时间。",
+            rule_id="EP-Q-PACKING",
+            target="RESPONDENT",
+            trigger="缺少卖方打包时商品已装入涉案包裹的记录。",
+            question_template="请补充能关联涉案运单的打包内容记录，并说明记录形成时间。",
+            applies_to_claim_types=("PACKAGE_EMPTY", "CONTENT_NOT_RECEIVED"),
+            acceptable_evidence_types=("DOCUMENT", "PARTY_STATEMENT", "PHOTO", "VIDEO"),
+        ),
+        QuestionRuleDefinition(
+            rule_id="EP-Q-OPENING",
+            target="CLAIMANT",
+            trigger="缺少买方首次开包时包裹内容和封装状态的记录。",
+            question_template="请补充能关联涉案运单的首次开包内容记录，并说明签收和开包时间。",
             applies_to_claim_types=("PACKAGE_EMPTY", "CONTENT_NOT_RECEIVED"),
             acceptable_evidence_types=("DOCUMENT", "PARTY_STATEMENT", "PHOTO", "VIDEO"),
         ),
@@ -247,8 +278,8 @@ SHIPPING_DAMAGE_MANIFEST = SkillManifest(
         ClaimTypeDefinition(code="INSUFFICIENT_PACKAGING", title="包装不足", description="卖家包装措施可能不足以保护交易商品。"),
         ClaimTypeDefinition(code="LATE_DAMAGE_REPORT", title="延迟报损", description="买方在签收后较长时间才报告损坏。"),
     ),
-    required_context=COMMON_CONTEXT,
-    allowed_tools=COMMON_TOOLS,
+    required_context=SHIPPING_DAMAGE_CONTEXT,
+    allowed_tools=SHIPPING_DAMAGE_TOOLS,
     evidence_requirements=(
         SkillEvidenceRequirement(
             requirement_id="SD-PRE-SHIPMENT-CONDITION",
@@ -298,4 +329,3 @@ BUILTIN_SKILLS = (
     ManifestDisputeSkill(EMPTY_PACKAGE_MANIFEST),
     ManifestDisputeSkill(SHIPPING_DAMAGE_MANIFEST),
 )
-

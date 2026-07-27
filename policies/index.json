@@ -22,6 +22,30 @@
       "effective_from": "2026-01-01T00:00:00+08:00",
       "effective_to": null,
       "path": "description_mismatch/2.0.0.json"
+    },
+    {
+      "policy_id": "marketplace.missing_parts",
+      "version": "1.0.0",
+      "status": "ACTIVE",
+      "effective_from": "2025-01-01T00:00:00+08:00",
+      "effective_to": null,
+      "path": "missing_parts/1.0.0.json"
+    },
+    {
+      "policy_id": "marketplace.empty_package",
+      "version": "1.0.0",
+      "status": "ACTIVE",
+      "effective_from": "2025-01-01T00:00:00+08:00",
+      "effective_to": null,
+      "path": "empty_package/1.0.0.json"
+    },
+    {
+      "policy_id": "marketplace.shipping_damage",
+      "version": "1.0.0",
+      "status": "ACTIVE",
+      "effective_from": "2025-01-01T00:00:00+08:00",
+      "effective_to": null,
+      "path": "shipping_damage/1.0.0.json"
     }
   ]
 }

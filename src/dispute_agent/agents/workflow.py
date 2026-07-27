@@ -90,6 +90,7 @@ class InvestigationWorkflow:
             if phase == "ADJUDICATION":
                 recommendation = self.runtime.run_adjudicator(case_id, run_id)
                 payload = recommendation.payload
+                self.runtime.assert_case_tool_allowed(case_id, "resolution.create_draft")
                 draft = self.tools.call(
                     "resolution.create_draft",
                     {
