@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0.0",
+  "policy_id": "marketplace.shipping_damage",
+  "version": "1.0.0",
+  "title": "二手交易运输损坏争议处理规则（演示版）",
+  "platform": "demo-marketplace",
+  "status": "ACTIVE",
+  "effective_from": "2025-01-01T00:00:00+08:00",
+  "effective_to": null,
+  "selection_basis": {"transaction_time_field": "paid_at", "interval_semantics": "[effective_from,effective_to)", "timezone": "Asia/Shanghai"},
+  "scope": {"dispute_types": ["SHIPPING_DAMAGE"], "listing_categories": ["USED_LAPTOP"]},
+  "authority": {
+    "automatic_final_decision_allowed": false,
+    "human_review_required": true,
+    "auto_suggestion_refund_limit": {"currency": "CNY", "amount_minor": 200000},
+    "allowed_outcomes": ["RETURN_AND_FULL_REFUND", "PARTIAL_REFUND", "REJECT_CLAIM", "REQUEST_MORE_EVIDENCE", "RELEASE_FUNDS", "ESCALATE_TO_HUMAN"],
+    "mandatory_human_review_triggers": [
+      {"code": "DAMAGE_CAUSATION_CONTESTED", "description": "损坏发生环节或因果关系存在争议。"},
+      {"code": "LATE_DAMAGE_REPORT", "description": "签收后延迟报损且原因未核实。"},
+      {"code": "CARRIER_LIABILITY_REQUIRED", "description": "需要判断承运责任或物流索赔。"},
+      {"code": "POLICY_SELECTION_ERROR", "description": "无法唯一选定支付时点有效政策。"}
+    ]
+  },
+  "evidence_requirements": [
+    {"requirement_id": "ER-SD-PRECONDITION", "applies_to_claim_types": ["ITEM_DAMAGED_IN_TRANSIT", "INSUFFICIENT_PACKAGING"], "description": "发货前商品状态、包装材料和封装方式记录。", "accepted_evidence_types": ["DOCUMENT", "PARTY_STATEMENT", "PHOTO", "VIDEO"], "minimum_independent_sources": 1, "mandatory_for_finding": true},
+    {"requirement_id": "ER-SD-DELIVERY-CONDITION", "applies_to_claim_types": ["ITEM_DAMAGED_IN_TRANSIT", "PACKAGING_DAMAGE", "LATE_DAMAGE_REPORT"], "description": "签收时或合理时间内外包装、商品状态及首次报损时间。", "accepted_evidence_types": ["SHIPMENT_EVENT", "DOCUMENT", "PARTY_STATEMENT", "PHOTO", "VIDEO"], "minimum_independent_sources": 1, "mandatory_for_finding": true},
+    {"requirement_id": "ER-SD-CARRIER-EVENT", "applies_to_claim_types": ["ITEM_DAMAGED_IN_TRANSIT", "PACKAGING_DAMAGE"], "description": "物流异常、承运记录或签收备注能够定位可能的损坏环节。", "accepted_evidence_types": ["SHIPMENT_EVENT", "DOCUMENT"], "minimum_independent_sources": 1, "mandatory_for_finding": false}
+  ],
+  "rules": [
+    {"rule_id": "SD-DEF-01", "title": "运输损坏的构成", "category": "DEFINITION", "text": "发货前状态完好、签收时或合理时间内出现损坏且物流或包装证据支持损坏发生在运输环节时，可构成运输损坏争议。", "conditions": ["发货前状态可确定", "签收状态可确定"], "required_evidence_refs": ["ER-SD-PRECONDITION", "ER-SD-DELIVERY-CONDITION"], "allowed_outcomes": ["RETURN_AND_FULL_REFUND", "PARTIAL_REFUND", "REQUEST_MORE_EVIDENCE", "ESCALATE_TO_HUMAN"], "priority": 100, "guard_checks": ["FACTS_HAVE_EVIDENCE", "ALL_MATERIAL_CLAIMS_ADDRESSED"]},
+    {"rule_id": "SD-BURDEN-01", "title": "运输损坏举证责任", "category": "BURDEN", "text": "买方应证明签收时损坏及报损时间，卖方应说明发货前状态和包装；任一关键时间点缺失时不得自动归责。", "conditions": ["买方主张运输损坏"], "required_evidence_refs": ["ER-SD-PRECONDITION", "ER-SD-DELIVERY-CONDITION"], "allowed_outcomes": ["REQUEST_MORE_EVIDENCE", "REJECT_CLAIM", "ESCALATE_TO_HUMAN"], "priority": 95, "guard_checks": ["DAMAGE_TIMELINE_CHECKED"]},
+    {"rule_id": "SD-EVIDENCE-01", "title": "损坏因果与承运责任", "category": "EVIDENCE", "text": "损坏原因、包装充分性和承运异常之间存在冲突时必须人工核验，不能将承运责任直接转化为卖方责任。", "conditions": ["损坏因果关系存在争议"], "required_evidence_refs": ["ER-SD-PRECONDITION", "ER-SD-DELIVERY-CONDITION", "ER-SD-CARRIER-EVENT"], "allowed_outcomes": ["REQUEST_MORE_EVIDENCE", "ESCALATE_TO_HUMAN"], "priority": 115, "guard_checks": ["DAMAGE_CAUSATION_ESCALATED", "CARRIER_LIABILITY_NOT_ASSUMED"]},
+    {"rule_id": "SD-REMEDY-01", "title": "运输损坏处置", "category": "REMEDY", "text": "只有在损坏事实、时间线和责任归属均有充分材料时，才可建议退货退款或部分退款；涉及承运责任时优先转人工。", "conditions": ["损坏事实与责任均可核验"], "required_evidence_refs": ["ER-SD-PRECONDITION", "ER-SD-DELIVERY-CONDITION"], "allowed_outcomes": ["RETURN_AND_FULL_REFUND", "PARTIAL_REFUND", "ESCALATE_TO_HUMAN"], "priority": 85, "guard_checks": ["REFUND_NOT_OVERPAID_AMOUNT", "CARRIER_LIABILITY_CHECKED"]},
+    {"rule_id": "SD-INSUFFICIENT-01", "title": "运输损坏证据不足", "category": "INSUFFICIENT_EVIDENCE", "text": "缺少发货前状态、签收状态或报损时效材料时应定向补问，不能把损坏发生环节写成既定事实。", "conditions": ["关键时间链缺失"], "required_evidence_refs": [], "allowed_outcomes": ["REQUEST_MORE_EVIDENCE", "REJECT_CLAIM", "ESCALATE_TO_HUMAN"], "priority": 105, "guard_checks": ["NO_UNSUPPORTED_ESTABLISHED_FACT", "QUESTION_IS_TARGETED"]},
+    {"rule_id": "SD-ESCALATE-01", "title": "运输损坏强制人工", "category": "ESCALATION", "text": "损坏因果争议、延迟报损或需要承运责任判断时必须人工审核；MVP 所有建议均需人工批准。", "conditions": ["命中强制人工条件"], "required_evidence_refs": [], "allowed_outcomes": ["ESCALATE_TO_HUMAN"], "priority": 120, "guard_checks": ["MANDATORY_HUMAN_REVIEW_ENFORCED"]}
+  ],
+  "source": {"kind": "SYNTHETIC_DEMO_POLICY", "notice": "本规则仅用于软件演示和测试，不代表任何现实平台规则，也不构成法律意见。"}
+}

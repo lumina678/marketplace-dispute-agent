@@ -150,8 +150,25 @@ def validate_policies() -> tuple[dict[str, Any], dict[tuple[str, str], dict[str,
         for rule in policy["rules"]:
             require(set(rule["required_evidence_refs"]).issubset(requirement_ids), f"{rule['rule_id']} 引用不存在的证据要求")
             require(set(rule["allowed_outcomes"]).issubset(authority_outcomes), f"{rule['rule_id']} 使用未授权结果")
-        require("DM-DEF-01" in rule_ids, f"{entry['path']} 缺少描述不符定义")
-        require("DM-ESCALATE-01" in rule_ids, f"{entry['path']} 缺少强制人工规则")
+        dispute_types = set(policy["scope"]["dispute_types"])
+        prefix_by_type = {
+            "DESCRIPTION_MISMATCH": "DM",
+            "MISSING_PARTS": "MP",
+            "EMPTY_PACKAGE": "EP",
+            "SHIPPING_DAMAGE": "SD",
+        }
+        prefixes = {prefix_by_type[item] for item in dispute_types if item in prefix_by_type}
+        require(len(prefixes) == 1, f"{entry['path']} 必须且只能声明一个已支持的自动调查争议类型")
+        prefix = prefixes.pop()
+        for suffix, label in (
+            ("DEF-01", "定义规则"),
+            ("BURDEN-01", "举证责任规则"),
+            ("EVIDENCE-01", "证据规则"),
+            ("REMEDY-01", "处置规则"),
+            ("INSUFFICIENT-01", "证据不足规则"),
+            ("ESCALATE-01", "强制人工规则"),
+        ):
+            require(f"{prefix}-{suffix}" in rule_ids, f"{entry['path']} 缺少{label}")
         require(policy["authority"]["automatic_final_decision_allowed"] is False, "MVP 禁止自动最终裁决")
         require(policy["authority"]["human_review_required"] is True, "MVP 必须人工审核")
 
@@ -171,6 +188,15 @@ def validate_policies() -> tuple[dict[str, Any], dict[tuple[str, str], dict[str,
     require(policy_for_time(index, "marketplace.description_mismatch", parse_time("2025-12-31T23:59:59+08:00", "边界测试时间"))["version"] == "1.0.0", "v1 结束边界前未选中 v1")
     require(policy_for_time(index, "marketplace.description_mismatch", parse_time("2026-01-01T00:00:00+08:00", "边界测试时间"))["version"] == "2.0.0", "v2 开始边界未选中 v2")
     require(policy_for_time(index, "marketplace.description_mismatch", parse_time("2026-07-01T12:00:00+08:00", "测试时间"))["version"] == "2.0.0", "2026 年测试交易未选中 v2")
+    for policy_id in (
+        "marketplace.missing_parts",
+        "marketplace.empty_package",
+        "marketplace.shipping_damage",
+    ):
+        require(
+            policy_for_time(index, policy_id, parse_time("2026-07-01T12:00:00+08:00", "测试时间"))["version"] == "1.0.0",
+            f"{policy_id} 未在演示交易时间选中 v1",
+        )
     print(f"[PASS] 规则库：{len(policies)} 个版本，生效区间连续且互不重叠")
     return index, policies
 
@@ -344,9 +370,10 @@ def optional_jsonschema_validation() -> None:
         ("policy-index.schema.json", POLICIES / "index.json"),
         ("case-file.schema.json", ROOT / "examples" / "laptop_description_mismatch_case.json"),
     ]
+    policy_index = load_json(POLICIES / "index.json")
     validations.extend(
-        ("policy-version.schema.json", path)
-        for path in sorted((POLICIES / "description_mismatch").glob("*.json"))
+        ("policy-version.schema.json", POLICIES / item["path"])
+        for item in policy_index["policies"]
     )
     for schema_name, instance_path in validations:
         schema = schemas[schema_name]

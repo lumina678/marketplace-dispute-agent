@@ -107,7 +107,10 @@ def _load_policy_versions(session: Session, policy_directory: Path) -> None:
             continue
         session.add(
             PolicyVersion(
-                id=f"policy_{entry['version'].replace('.', '_')}",
+                id=(
+                    f"policy_{entry['policy_id'].replace('.', '_').replace('-', '_')}"
+                    f"_{entry['version'].replace('.', '_')}"
+                ),
                 policy_id=entry["policy_id"],
                 version=entry["version"],
                 status=entry["status"],

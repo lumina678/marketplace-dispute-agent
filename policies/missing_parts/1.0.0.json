@@ -1,0 +1,42 @@
+{
+  "schema_version": "1.0.0",
+  "policy_id": "marketplace.missing_parts",
+  "version": "1.0.0",
+  "title": "二手商品缺件争议处理规则（演示版）",
+  "platform": "demo-marketplace",
+  "status": "ACTIVE",
+  "effective_from": "2025-01-01T00:00:00+08:00",
+  "effective_to": null,
+  "selection_basis": {
+    "transaction_time_field": "paid_at",
+    "interval_semantics": "[effective_from,effective_to)",
+    "timezone": "Asia/Shanghai"
+  },
+  "scope": {"dispute_types": ["MISSING_PARTS"], "listing_categories": ["USED_LAPTOP"]},
+  "authority": {
+    "automatic_final_decision_allowed": false,
+    "human_review_required": true,
+    "auto_suggestion_refund_limit": {"currency": "CNY", "amount_minor": 200000},
+    "allowed_outcomes": ["RETURN_AND_FULL_REFUND", "PARTIAL_REFUND", "REJECT_CLAIM", "REQUEST_MORE_EVIDENCE", "RELEASE_FUNDS", "ESCALATE_TO_HUMAN"],
+    "mandatory_human_review_triggers": [
+      {"code": "HIGH_VALUE_COMPONENT_MISSING", "description": "核心或高价值部件缺失。"},
+      {"code": "PACKAGE_CONTENTS_MATERIALLY_CONTESTED", "description": "双方对包裹内容存在重大冲突。"},
+      {"code": "EVIDENCE_AUTHENTICITY_CONTESTED", "description": "关键材料的真实性或关联性受到质疑。"},
+      {"code": "POLICY_SELECTION_ERROR", "description": "无法唯一选定支付时点有效政策。"}
+    ]
+  },
+  "evidence_requirements": [
+    {"requirement_id": "ER-MP-PROMISED-CONTENTS", "applies_to_claim_types": ["MISSING_ACCESSORY", "MISSING_COMPONENT", "QUANTITY_SHORTAGE"], "description": "商品快照或聊天明确显示应交付的部件和数量。", "accepted_evidence_types": ["LISTING_SNAPSHOT", "CHAT_SNAPSHOT"], "minimum_independent_sources": 1, "mandatory_for_finding": true},
+    {"requirement_id": "ER-MP-RECEIVED-CONTENTS", "applies_to_claim_types": ["MISSING_ACCESSORY", "MISSING_COMPONENT", "QUANTITY_SHORTAGE"], "description": "签收和首次开包时实际收到内容的可核实记录。", "accepted_evidence_types": ["DOCUMENT", "PARTY_STATEMENT", "PHOTO", "VIDEO"], "minimum_independent_sources": 1, "mandatory_for_finding": true},
+    {"requirement_id": "ER-MP-PRESHIPMENT-CONTENTS", "applies_to_claim_types": ["MISSING_ACCESSORY", "MISSING_COMPONENT", "QUANTITY_SHORTAGE"], "description": "卖方发货前装箱内容、数量和封装记录。", "accepted_evidence_types": ["DOCUMENT", "PARTY_STATEMENT", "PHOTO", "VIDEO"], "minimum_independent_sources": 1, "mandatory_for_finding": false}
+  ],
+  "rules": [
+    {"rule_id": "MP-DEF-01", "title": "缺件的构成", "category": "DEFINITION", "text": "约定应交付的部件或数量与签收时实际内容存在实质差异时，可构成缺件。", "conditions": ["存在交易前内容承诺", "存在签收内容记录"], "required_evidence_refs": ["ER-MP-PROMISED-CONTENTS", "ER-MP-RECEIVED-CONTENTS"], "allowed_outcomes": ["PARTIAL_REFUND", "RETURN_AND_FULL_REFUND", "REQUEST_MORE_EVIDENCE", "REJECT_CLAIM"], "priority": 100, "guard_checks": ["FACTS_HAVE_EVIDENCE", "ALL_MATERIAL_CLAIMS_ADDRESSED"]},
+    {"rule_id": "MP-BURDEN-01", "title": "缺件初步举证", "category": "BURDEN", "text": "主张缺件的一方应证明约定内容、收到内容和两者差异；单方陈述不足以直接认定。", "conditions": ["买方主张缺件"], "required_evidence_refs": ["ER-MP-PROMISED-CONTENTS", "ER-MP-RECEIVED-CONTENTS"], "allowed_outcomes": ["REQUEST_MORE_EVIDENCE", "PARTIAL_REFUND", "REJECT_CLAIM", "ESCALATE_TO_HUMAN"], "priority": 95, "guard_checks": ["CONTENTS_CHAIN_CHECKED"]},
+    {"rule_id": "MP-EVIDENCE-01", "title": "内容冲突", "category": "EVIDENCE", "text": "交易承诺、发货前记录和签收内容互相冲突时，不得仅凭一方材料认定缺件，必须人工审核。", "conditions": ["内容记录存在重大冲突"], "required_evidence_refs": ["ER-MP-PROMISED-CONTENTS", "ER-MP-RECEIVED-CONTENTS", "ER-MP-PRESHIPMENT-CONTENTS"], "allowed_outcomes": ["REQUEST_MORE_EVIDENCE", "ESCALATE_TO_HUMAN"], "priority": 115, "guard_checks": ["PACKAGE_CONTENTS_CONFLICT_ESCALATED"]},
+    {"rule_id": "MP-REMEDY-01", "title": "缺件处置", "category": "REMEDY", "text": "明确缺件且金额有双方记录支持时可建议部分退款；核心部件缺失或无法安全估价时应退货全额退款或转人工。", "conditions": ["缺件事实得到支持", "退款金额有证据依据"], "required_evidence_refs": ["ER-MP-PROMISED-CONTENTS", "ER-MP-RECEIVED-CONTENTS"], "allowed_outcomes": ["PARTIAL_REFUND", "RETURN_AND_FULL_REFUND", "ESCALATE_TO_HUMAN"], "priority": 85, "guard_checks": ["REFUND_NOT_OVERPAID_AMOUNT", "REFUND_AMOUNT_SOURCE_CHECKED"]},
+    {"rule_id": "MP-INSUFFICIENT-01", "title": "缺件证据不足", "category": "INSUFFICIENT_EVIDENCE", "text": "缺少约定内容或签收内容时应定向补问；达到补问上限仍不足可驳回或转人工。", "conditions": ["关键内容事实缺失"], "required_evidence_refs": [], "allowed_outcomes": ["REQUEST_MORE_EVIDENCE", "REJECT_CLAIM", "ESCALATE_TO_HUMAN"], "priority": 105, "guard_checks": ["NO_UNSUPPORTED_ESTABLISHED_FACT", "QUESTION_IS_TARGETED"]},
+    {"rule_id": "MP-ESCALATE-01", "title": "缺件强制人工", "category": "ESCALATION", "text": "高价值部件缺失、双方对内容有重大冲突或关键证据真实性受质疑时必须人工审核；MVP 所有建议均需人工批准。", "conditions": ["命中强制人工条件"], "required_evidence_refs": [], "allowed_outcomes": ["ESCALATE_TO_HUMAN"], "priority": 120, "guard_checks": ["MANDATORY_HUMAN_REVIEW_ENFORCED"]}
+  ],
+  "source": {"kind": "SYNTHETIC_DEMO_POLICY", "notice": "本规则仅用于软件演示和测试，不代表任何现实平台规则，也不构成法律意见。"}
+}

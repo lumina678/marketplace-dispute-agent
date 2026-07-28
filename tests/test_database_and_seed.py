@@ -14,10 +14,18 @@ def test_schema_and_seed_are_complete_and_idempotent(context) -> None:
             "disputes": session.scalar(select(func.count()).select_from(Dispute)),
             "policy_versions": session.scalar(select(func.count()).select_from(PolicyVersion)),
         }
-        assert counts == {"users": 4, "transactions": 5, "disputes": 5, "policy_versions": 2}
+        assert counts == {"users": 4, "transactions": 5, "disputes": 5, "policy_versions": 5}
         second = seed_database(session, context.settings.policy_directory)
         assert second["disputes"] == 5
-        assert second["policy_versions"] == 2
+        assert second["policy_versions"] == 5
+
+        policy_ids = set(session.scalars(select(PolicyVersion.policy_id)))
+        assert policy_ids == {
+            "marketplace.description_mismatch",
+            "marketplace.missing_parts",
+            "marketplace.empty_package",
+            "marketplace.shipping_damage",
+        }
 
         claims = list(session.scalars(select(Claim).order_by(Claim.id)))
         assert claims

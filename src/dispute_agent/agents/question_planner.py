@@ -13,6 +13,7 @@ from dispute_agent.errors import ConflictError
 from dispute_agent.models import AgentOutput, Claim, Evidence
 from dispute_agent.services.agent_context import require_run
 from dispute_agent.services.tools import ToolService
+from dispute_agent.skills import SkillRegistry, get_skill_registry
 
 
 ROLE_PRIORITY = {
@@ -30,9 +31,11 @@ class EvidenceGapQuestionPlanner:
         session_factory: sessionmaker[Session] = SessionLocal,
         *,
         tools: ToolService | None = None,
+        skill_registry: SkillRegistry | None = None,
     ):
         self.session_factory = session_factory
         self.tools = tools or ToolService(session_factory)
+        self.skill_registry = skill_registry or get_skill_registry()
 
     def plan(self, case_id: str, case_run_id: str) -> dict[str, Any]:
         with self.session_factory() as session:
@@ -63,6 +66,19 @@ class EvidenceGapQuestionPlanner:
             and facts.get("listing_serial") == facts.get("detected_serial")
         )
         seller_has_material_claim = any(item.party == "SELLER" and item.material for item in claims)
+        bound_skills = {
+            (item.skill_name, item.skill_version)
+            for item in claims
+            if item.material and item.skill_name and item.skill_version
+        }
+        if len(bound_skills) != 1:
+            raise ConflictError("补问 Planner 要求所有关键主张绑定同一个 Skill")
+        skill_name, skill_version = next(iter(bound_skills))
+        skill = self.skill_registry.get(str(skill_name), str(skill_version))
+        if "case.add_open_question" not in set(skill.allowed_tools()):
+            raise ConflictError(
+                f"Skill {skill.manifest.name}@{skill.manifest.version} 不允许创建外部补问"
+            )
 
         proposals: dict[tuple[str, tuple[str, ...], tuple[str, ...]], tuple[int, QuestionProposal]] = {}
         invalid_count = 0
@@ -75,7 +91,8 @@ class EvidenceGapQuestionPlanner:
                     invalid_count += 1
                     continue
                 if (
-                    proposal.target == "SELLER"
+                    skill.manifest.name == "description-mismatch"
+                    and proposal.target == "SELLER"
                     and buyer_initial_burden_met
                     and not seller_has_material_claim
                 ):

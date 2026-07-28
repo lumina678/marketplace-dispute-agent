@@ -2,14 +2,14 @@
 
 本项目是一个面向二手交易争议的多 Agent 调查与裁决辅助系统，通过双方观点分离、证据链构建、版本化规则检索、人工审批和幂等执行，处理普通客服流程无法解决的复杂案件。
 
-> 当前仓库完成了实施计划的前十九步：基础规格、SQLite 数据层、本地 MCP 工具层、确定性案件编排器、多 Agent 调查、补证恢复、裁决草稿、确定性 Decision Guard、人工审核、模拟执行与回读、申诉重开和二次调查、可重复评测 Harness、案件工作台、Claim 级争议分类、版本化 Skill 框架和确定性 Router。系统不替代法院、仲裁机构或平台人工裁决员。
+> 当前仓库完成了实施计划的前二十一步：基础规格、SQLite 数据层、本地 MCP 工具层、确定性案件编排器、多 Agent 调查、补证恢复、裁决草稿、确定性 Decision Guard、人工审核、模拟执行与回读、申诉重开和二次调查、可重复评测 Harness、案件工作台、Claim 级争议分类、版本化 Skill 框架、确定性 Router、Skill 驱动完整编排和通用模拟案件接入。系统不替代法院、仲裁机构或平台人工裁决员。
 
 ## 当前 MVP
 
-- 场景：二手笔记本电脑“商品描述与实物不符”争议。
+- 场景：二手笔记本电脑的描述不符、缺件、空包和运输损坏文本争议；假货和未知类型固定转人工。
 - 语言与币种：简体中文、人民币。
 - 决策方式：Agent 调查与建议 + 确定性校验 + 人工审批。
-- 执行方式：后续阶段仅连接模拟账户，不接入真实支付或物流系统。
+- 执行方式：仅连接模拟账户和本地交易/物流数据，不接入真实支付或物流系统。
 
 ## 已交付能力
 
@@ -34,8 +34,10 @@
 | 17. 争议分类体系 | [`src/dispute_agent/dispute_types.py`](src/dispute_agent/dispute_types.py)、[`alembic/versions/2e4c6a8b0d12_add_claim_routing_and_skill_binding.py`](alembic/versions/2e4c6a8b0d12_add_claim_routing_and_skill_binding.py) | 为每条 Claim 持久化争议类型、路由来源、理由、置信度、状态和版本化 Skill 绑定，并锁入 Case Run checkpoint |
 | 18. Skill 框架 | [`src/dispute_agent/skills/`](src/dispute_agent/skills/)、[`docs/STEPS_17_18.md`](docs/STEPS_17_18.md) | 提供不可变 Skill 合同、注册表和描述不符、缺件、空包、运输损坏四套文本调查手册，并注入 Agent 上下文 |
 | 19. 确定性 Router | [`src/dispute_agent/services/claim_router.py`](src/dispute_agent/services/claim_router.py)、[`config/dispute_router.json`](config/dispute_router.json)、[`docs/STEPS_19.md`](docs/STEPS_19.md) | 按用户声明、平台原因码和版本化文本规则路由 Claim，保存追加式审计历史，模型候选、歧义、假货和未知类型固定转人工 |
+| 20. Skill 驱动完整编排 | [`src/dispute_agent/agents/runtime.py`](src/dispute_agent/agents/runtime.py)、[`src/dispute_agent/agents/heuristics.py`](src/dispute_agent/agents/heuristics.py)、[`src/dispute_agent/services/decision_guard.py`](src/dispute_agent/services/decision_guard.py)、[`docs/STEPS_20.md`](docs/STEPS_20.md) | 补齐缺件、空包、运输损坏政策；由绑定 Skill 裁剪上下文和工具；生成类型专属补问；Guard Profile 按争议类型执行独立边界 |
+| 21. 通用模拟案件接入 | [`src/dispute_agent/services/intake.py`](src/dispute_agent/services/intake.py)、[`src/dispute_agent/intake_schemas.py`](src/dispute_agent/intake_schemas.py)、[`docs/INTAKE_API.md`](docs/INTAKE_API.md)、[`docs/STEPS_21.md`](docs/STEPS_21.md) | 通过幂等 API 创建交易、导入商品和聊天、提交争议/Claim、上传文字证据，并以版本检查和 Manifest Hash 冻结可重放案件基线 |
 
-第五至第七步的详细约定见 [`docs/STEPS_5_7.md`](docs/STEPS_5_7.md)，第八至第十步见 [`docs/STEPS_8_10.md`](docs/STEPS_8_10.md)，第十一至第十二步见 [`docs/STEPS_11_12.md`](docs/STEPS_11_12.md)，第十三至第十四步见 [`docs/STEPS_13_14.md`](docs/STEPS_13_14.md)，第十五至第十六步见 [`docs/STEPS_15_16.md`](docs/STEPS_15_16.md)，第十七至第十八步见 [`docs/STEPS_17_18.md`](docs/STEPS_17_18.md)，第十九步见 [`docs/STEPS_19.md`](docs/STEPS_19.md)。默认使用无需 API Key 的 `rule-based-baseline-v1`，自有模型接入与故障语义见 [`docs/MODEL_INTEGRATION.md`](docs/MODEL_INTEGRATION.md)。
+第五至第七步的详细约定见 [`docs/STEPS_5_7.md`](docs/STEPS_5_7.md)，第八至第十步见 [`docs/STEPS_8_10.md`](docs/STEPS_8_10.md)，第十一至第十二步见 [`docs/STEPS_11_12.md`](docs/STEPS_11_12.md)，第十三至第十四步见 [`docs/STEPS_13_14.md`](docs/STEPS_13_14.md)，第十五至第十六步见 [`docs/STEPS_15_16.md`](docs/STEPS_15_16.md)，第十七至第十八步见 [`docs/STEPS_17_18.md`](docs/STEPS_17_18.md)，第十九步见 [`docs/STEPS_19.md`](docs/STEPS_19.md)，第二十步见 [`docs/STEPS_20.md`](docs/STEPS_20.md)，第二十一步见 [`docs/STEPS_21.md`](docs/STEPS_21.md)。默认使用无需 API Key 的 `rule-based-baseline-v1`，自有模型接入与故障语义见 [`docs/MODEL_INTEGRATION.md`](docs/MODEL_INTEGRATION.md)。
 
 ## 本地运行
 
@@ -55,6 +57,8 @@ python3 -m venv .venv
 ```
 
 API 文档位于 `http://127.0.0.1:8000/docs`。
+
+除种子案件外，现在也可以完全通过 API 创建新案件：创建交易、导入商品和聊天、提交 Claim、上传文字证据、冻结材料后启动 Workflow。完整请求示例和幂等/错误语义见 [`docs/INTAKE_API.md`](docs/INTAKE_API.md)。
 
 ## 接入自有大模型
 

@@ -48,10 +48,18 @@
       "properties": {
         "dispute_types": {
           "type": "array",
-          "contains": { "const": "DESCRIPTION_MISMATCH" },
-          "minContains": 1,
+          "minItems": 1,
           "uniqueItems": true,
-          "items": { "type": "string" }
+          "items": {
+            "enum": [
+              "DESCRIPTION_MISMATCH",
+              "MISSING_PARTS",
+              "EMPTY_PACKAGE",
+              "SHIPPING_DAMAGE",
+              "COUNTERFEIT",
+              "OTHER"
+            ]
+          }
         },
         "listing_categories": {
           "type": "array",
