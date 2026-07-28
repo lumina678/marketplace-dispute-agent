@@ -291,6 +291,7 @@
           ]
         },
         "description": { "type": "string", "minLength": 1 },
+        "text_content": { "type": ["string", "null"], "maxLength": 100000 },
         "submitted_at": { "$ref": "#/$defs/Timestamp" },
         "source": { "$ref": "#/$defs/SourceReference" },
         "integrity_status": { "enum": ["SOURCE_VERIFIED", "HASH_VERIFIED", "UNVERIFIED", "FAILED"] },

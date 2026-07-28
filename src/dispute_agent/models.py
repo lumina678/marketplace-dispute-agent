@@ -119,6 +119,9 @@ class Dispute(Base):
     policy_id: Mapped[str | None] = mapped_column(String(120))
     policy_version: Mapped[str | None] = mapped_column(String(20))
     policy_basis_time: Mapped[datetime | None] = mapped_column(AwareDateTime())
+    intake_manifest_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    intake_manifest_sha256: Mapped[str | None] = mapped_column(String(64))
+    materials_frozen_at: Mapped[datetime | None] = mapped_column(AwareDateTime())
     created_at: Mapped[datetime] = mapped_column(AwareDateTime(), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(AwareDateTime(), default=utc_now, onupdate=utc_now, nullable=False)
 
@@ -258,6 +261,7 @@ class Evidence(Base):
     submitted_by: Mapped[str] = mapped_column(String(20), nullable=False)
     evidence_type: Mapped[str] = mapped_column(String(40), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
+    content_text: Mapped[str | None] = mapped_column(Text)
     source_system: Mapped[str] = mapped_column(String(40), nullable=False)
     source_record_id: Mapped[str] = mapped_column(String(120), nullable=False)
     captured_at: Mapped[datetime] = mapped_column(AwareDateTime(), nullable=False)
