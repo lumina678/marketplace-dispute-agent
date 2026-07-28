@@ -27,6 +27,15 @@ from dispute_agent.services.evaluation import EvaluationService
 from dispute_agent.services.tools import ToolService
 from dispute_agent.services.workbench import WorkbenchService
 from dispute_agent.services.claim_router import ClaimRoutingService
+from dispute_agent.services.intake import CaseIntakeService
+from dispute_agent.intake_schemas import (
+    ChatBatchImportRequest,
+    DisputeSubmitRequest,
+    FreezeCaseMaterialsRequest,
+    ListingSnapshotImportRequest,
+    TextEvidenceUploadRequest,
+    TransactionCreateRequest,
+)
 from dispute_agent.routing_schemas import (
     ClaimRoutingHint,
     RouteCaseRequest,
@@ -174,6 +183,12 @@ def create_app(
     evaluation = EvaluationService(session_factory)
     workbench = WorkbenchService(session_factory)
     demo_cases = DemoCaseService(session_factory)
+    intake = CaseIntakeService(
+        session_factory,
+        routing_service=routing,
+        state_machine=orchestrator.state_machine,
+        skill_registry=skill_registry,
+    )
     app.state.generation_backend = backend
     app.state.skill_registry = skill_registry
     app.state.claim_router = routing
@@ -192,6 +207,8 @@ def create_app(
         status = (
             404
             if exc.code == "NOT_FOUND"
+            else 403
+            if exc.code == "NOT_AUTHORIZED"
             else 409
             if exc.code in {"CONFLICT", "INVALID_STATE_TRANSITION"}
             else 502
@@ -233,6 +250,28 @@ def create_app(
     @app.get("/skills/{skill_name}")
     def get_skill(skill_name: str, version: str | None = Query(default=None)) -> dict[str, Any]:
         return skill_registry.get(skill_name, version).manifest.model_dump(mode="json")
+
+    @app.post("/transactions")
+    def create_transaction(request: TransactionCreateRequest) -> dict[str, Any]:
+        return intake.create_transaction(request)
+
+    @app.post("/transactions/{transaction_id}/listing-snapshots")
+    def import_listing_snapshot(
+        transaction_id: str,
+        request: ListingSnapshotImportRequest,
+    ) -> dict[str, Any]:
+        return intake.import_listing_snapshot(transaction_id, request)
+
+    @app.post("/transactions/{transaction_id}/messages:batch")
+    def import_chat_batch(
+        transaction_id: str,
+        request: ChatBatchImportRequest,
+    ) -> dict[str, Any]:
+        return intake.import_chat_batch(transaction_id, request)
+
+    @app.post("/disputes")
+    def submit_dispute(request: DisputeSubmitRequest) -> dict[str, Any]:
+        return intake.submit_dispute(request)
 
     @app.get("/cases/{case_id}/routing")
     def get_case_routing(case_id: str) -> dict[str, Any]:
@@ -307,6 +346,24 @@ def create_app(
     @app.get("/cases/{case_id}")
     def get_case(case_id: str) -> dict[str, Any]:
         return tool_service.call("case.get_state", {"case_id": case_id}, actor="REVIEWER")
+
+    @app.get("/cases/{case_id}/intake")
+    def get_case_intake(case_id: str) -> dict[str, Any]:
+        return intake.get_intake(case_id)
+
+    @app.post("/cases/{case_id}/evidence")
+    def upload_text_evidence(
+        case_id: str,
+        request: TextEvidenceUploadRequest,
+    ) -> dict[str, Any]:
+        return intake.upload_text_evidence(case_id, request)
+
+    @app.post("/cases/{case_id}/freeze")
+    def freeze_case_materials(
+        case_id: str,
+        request: FreezeCaseMaterialsRequest,
+    ) -> dict[str, Any]:
+        return intake.freeze_case_materials(case_id, request)
 
     @app.get("/cases/{case_id}/events")
     def get_events(case_id: str, session: Session = Depends(get_session)) -> list[dict[str, Any]]:

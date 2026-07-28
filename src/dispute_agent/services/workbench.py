@@ -338,6 +338,7 @@ class WorkbenchService:
             "submitted_by": item.submitted_by,
             "evidence_type": item.evidence_type,
             "description": item.description,
+            "text_content": item.content_text,
             "source_system": item.source_system,
             "source_record_id": item.source_record_id,
             "captured_at": item.captured_at,

@@ -21,7 +21,7 @@ from dispute_agent.services.claim_routing import claim_routing_payload, case_rou
 from dispute_agent.skills import SkillRegistry, get_skill_registry
 
 
-ROUTING_MUTABLE_STATES = {"SUBMITTED", "EVIDENCE_LOCKED", "REOPENED"}
+ROUTING_MUTABLE_STATES = {"SUBMITTED", "REOPENED"}
 
 
 def _normalized_text(value: str) -> str:
@@ -421,6 +421,18 @@ class ClaimRoutingService:
     ) -> dict[str, Any]:
         if not force_recompute and claim.routing_status in {RoutingStatus.ROUTED.value, RoutingStatus.OVERRIDDEN.value}:
             return {"decision_id": None, "reused_current_binding": True, "claim_id": claim.id, **claim_routing_payload(claim)}
+        if (
+            hint is None
+            and claim.routing_source == RoutingSource.USER_DECLARED.value
+            and claim.issue_type not in {DisputeType.OTHER.value}
+        ):
+            # Generic intake persists the declaration before writing the routing
+            # audit record. If a process stops between those two commits, replay
+            # the declared type instead of reclassifying solely from free text.
+            hint = ClaimRoutingHint(
+                declared_issue_type=DisputeType(claim.issue_type),
+                declared_claim_type=claim.claim_type,
+            )
         decision = self.router.decide(statement=claim.statement, current_claim_type=claim.claim_type, hint=hint)
         return self._persist_decision(
             session,
