@@ -69,4 +69,8 @@
 curl -X POST http://127.0.0.1:8000/cases/case_clear_mismatch/workflow
 ```
 
+> 第二十二步起，该接口返回 `202 + job_id`，实际 Workflow 由 RQ Worker 执行；
+> 使用 `/workflow-jobs/{job_id}` 或 SSE `/workflow-jobs/{job_id}/events` 获取结果。
+> 本文其余内容描述的业务阶段和停止边界保持不变。
+
 该案件应生成 `RETURN_AND_FULL_REFUND` 草稿，通过 Guard 后停在 `HUMAN_REVIEW`。`case_buyer_missing_evidence` 应停在 `WAITING_FOR_BUYER`；`case_serial_conflict` 应先等待卖方补证，恢复后输出 `ESCALATE_TO_HUMAN`，不会认定买方调包。

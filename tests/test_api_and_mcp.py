@@ -47,8 +47,10 @@ def test_fastapi_runs_steps_8_to_10_and_exposes_agent_outputs(context) -> None:
         transport = httpx.ASGITransport(app=create_app(context.sessions))
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.post("/cases/case_clear_mismatch/workflow")
-            assert response.status_code == 200
-            result = response.json()
+            assert response.status_code == 202
+            job = response.json()
+            assert job["status"] == "COMPLETED", job["error"]
+            result = job["result"]
             assert result["phase"] == "HUMAN_REVIEW"
             assert result["workflow_boundary"] == "HUMAN_REVIEW_REQUIRED"
 

@@ -35,3 +35,7 @@ class PolicySelectionError(DisputeAgentError):
 
 class ModelBackendError(DisputeAgentError):
     code = "MODEL_BACKEND_ERROR"
+
+
+class QueueUnavailableError(DisputeAgentError):
+    code = "QUEUE_UNAVAILABLE"

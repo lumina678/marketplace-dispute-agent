@@ -340,6 +340,100 @@ class CaseRun(Base):
     )
 
 
+class WorkflowJob(Base):
+    __tablename__ = "workflow_jobs"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    dispute_id: Mapped[str] = mapped_column(ForeignKey("disputes.id", ondelete="CASCADE"), nullable=False)
+    case_run_id: Mapped[str | None] = mapped_column(ForeignKey("case_runs.id", ondelete="SET NULL"))
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="QUEUED")
+    current_phase: Mapped[str | None] = mapped_column(String(40))
+    actor_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    active_dedupe_key: Mapped[str | None] = mapped_column(String(80), unique=True)
+    rq_job_id: Mapped[str | None] = mapped_column(String(160), unique=True)
+    delivery_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    timeout_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=600)
+    event_sequence: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    worker_id: Mapped[str | None] = mapped_column(String(160))
+    heartbeat_at: Mapped[datetime | None] = mapped_column(AwareDateTime())
+    attempt_deadline_at: Mapped[datetime | None] = mapped_column(AwareDateTime())
+    pause_requested_at: Mapped[datetime | None] = mapped_column(AwareDateTime())
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(AwareDateTime())
+    paused_reason: Mapped[str | None] = mapped_column(Text)
+    error_code: Mapped[str | None] = mapped_column(String(100))
+    error_message: Mapped[str | None] = mapped_column(Text)
+    result_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    started_at: Mapped[datetime | None] = mapped_column(AwareDateTime())
+    finished_at: Mapped[datetime | None] = mapped_column(AwareDateTime())
+    created_at: Mapped[datetime] = mapped_column(AwareDateTime(), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(AwareDateTime(), default=utc_now, onupdate=utc_now, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('QUEUED','RUNNING','RETRYING','PAUSE_REQUESTED','PAUSED','CANCEL_REQUESTED','CANCELLED','COMPLETED','FAILED','TIMED_OUT')",
+            name="ck_workflow_jobs_status",
+        ),
+        CheckConstraint("delivery_version >= 1", name="ck_workflow_jobs_delivery_version"),
+        CheckConstraint("attempt_count >= 0 AND attempt_count <= max_attempts", name="ck_workflow_jobs_attempt_count"),
+        CheckConstraint("max_attempts >= 1", name="ck_workflow_jobs_max_attempts"),
+        CheckConstraint("timeout_seconds >= 30", name="ck_workflow_jobs_timeout"),
+        CheckConstraint("event_sequence >= 0", name="ck_workflow_jobs_event_sequence"),
+        Index("ix_workflow_jobs_case_created", "dispute_id", "created_at"),
+        Index("ix_workflow_jobs_status_heartbeat", "status", "heartbeat_at"),
+    )
+
+
+class WorkflowStage(Base):
+    __tablename__ = "workflow_stages"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    workflow_job_id: Mapped[str] = mapped_column(ForeignKey("workflow_jobs.id", ondelete="CASCADE"), nullable=False)
+    dispute_id: Mapped[str] = mapped_column(ForeignKey("disputes.id", ondelete="CASCADE"), nullable=False)
+    case_run_id: Mapped[str | None] = mapped_column(ForeignKey("case_runs.id", ondelete="SET NULL"))
+    phase: Mapped[str] = mapped_column(String(40), nullable=False)
+    agent_role: Mapped[str] = mapped_column(String(60), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="PENDING")
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(AwareDateTime())
+    result_summary_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    started_at: Mapped[datetime | None] = mapped_column(AwareDateTime())
+    completed_at: Mapped[datetime | None] = mapped_column(AwareDateTime())
+    created_at: Mapped[datetime] = mapped_column(AwareDateTime(), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(AwareDateTime(), default=utc_now, onupdate=utc_now, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("workflow_job_id", "phase", "agent_role", name="uq_workflow_stages_job_phase_role"),
+        CheckConstraint(
+            "status IN ('PENDING','RUNNING','COMPLETED','FAILED','PAUSED','CANCELLED')",
+            name="ck_workflow_stages_status",
+        ),
+        CheckConstraint("attempt_count >= 0", name="ck_workflow_stages_attempt_count"),
+        Index("ix_workflow_stages_job_status", "workflow_job_id", "status"),
+    )
+
+
+class WorkflowJobEvent(Base):
+    __tablename__ = "workflow_job_events"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    workflow_job_id: Mapped[str] = mapped_column(ForeignKey("workflow_jobs.id", ondelete="CASCADE"), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(60), nullable=False)
+    phase: Mapped[str | None] = mapped_column(String(40))
+    agent_role: Mapped[str | None] = mapped_column(String(60))
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    occurred_at: Mapped[datetime] = mapped_column(AwareDateTime(), default=utc_now, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("workflow_job_id", "sequence", name="uq_workflow_job_events_sequence"),
+        CheckConstraint("sequence >= 1", name="ck_workflow_job_events_sequence"),
+        Index("ix_workflow_job_events_stream", "workflow_job_id", "sequence"),
+    )
+
+
 class ToolCall(Base):
     __tablename__ = "tool_calls"
 

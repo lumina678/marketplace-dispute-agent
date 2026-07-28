@@ -134,6 +134,10 @@ curl -X POST http://127.0.0.1:8000/cases/case_api_001/workflow \
   -H 'Content-Type: application/json' -d '{}'
 ```
 
+该接口返回 `202 Accepted` 和 `job_id`，不会等待模型完成。使用
+`GET /workflow-jobs/{job_id}` 查询持久化状态，或使用
+`GET /workflow-jobs/{job_id}/events` 订阅 SSE 进度。
+
 ## 幂等与错误语义
 
 - 相同业务 ID + 相同规范化内容：`200`，响应中 `created=false` 或 `reused_count>0`；

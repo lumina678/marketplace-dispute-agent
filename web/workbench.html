@@ -252,6 +252,12 @@
     }
     .primary-action:hover { filter:brightness(.97); transform:translateY(-1px); }
     .primary-action:disabled { opacity:.55; cursor:wait; transform:none; }
+    .workflow-controls { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px; }
+    .workflow-control {
+      padding:9px; border:1px solid #44443f; border-radius:10px; color:#d8d6cd; background:#282826; cursor:pointer; font-size:9px;
+    }
+    .workflow-control:hover { color:#fff; border-color:#77766e; }
+    .workflow-control.danger { color:#ffb6a5; border-color:#6b3c32; }
     .guard-note { margin-top:9px; color:#77766f; text-align:center; font-size:8px; }
     .agent-details-link { width:100%; margin-top:10px; padding:9px; border:1px solid #3a3a36; border-radius:10px; color:#bbb9b0; background:transparent; cursor:pointer; font-size:9px; }
     .agent-details-link:hover { color:#fff; border-color:#66655e; }
@@ -426,7 +432,8 @@
     let currentCaseId = new URLSearchParams(location.search).get('case_id') || 'case_clear_mismatch';
     let modelInfo = null;
     let actionBusy = false;
-    let workflowPollTimer = null;
+    let workflowEventSource = null;
+    let currentWorkflowJob = null;
     let workflowStartedAt = null;
 
     function showToast(message, error=false) {
@@ -468,6 +475,10 @@
     function latestTrace(data, role) { return [...(data.agent_trace || [])].reverse().find(item => item.role === role) || null; }
     function clerkPayload(data) { return latestTrace(data, 'EVIDENCE_POLICY_CLERK')?.payload || {}; }
     function decisionPayload(data) { return data.recommendation?.payload || latestTrace(data, 'ADJUDICATION_AGENT')?.payload || {}; }
+    function jobIsBusy(job) {
+      return ['QUEUED','RUNNING','RETRYING','PAUSE_REQUESTED','CANCEL_REQUESTED'].includes(job?.status)
+        && job?.error?.code !== 'QUEUE_UNAVAILABLE';
+    }
 
     function stageIndex(state) {
       if (['SUBMITTED'].includes(state)) return 0;
@@ -573,6 +584,15 @@
     function roleStatus(data, role) {
       const trace = latestTrace(data, role);
       if (trace) return ['done','分析完成',trace.model_name];
+      const job = data.workflow_job || currentWorkflowJob;
+      const stage = (job?.stages || []).find(item => item.agent_role === role);
+      if (stage) {
+        if (stage.status === 'COMPLETED') return ['done','分析完成',modelInfo?.model_name || modelInfo?.name || '当前 Backend'];
+        if (stage.status === 'RUNNING') return ['running',`正在执行 · 第 ${stage.attempt_count} 次`,modelInfo?.model_name || modelInfo?.name || '当前 Backend'];
+        if (stage.status === 'FAILED') return ['',`执行失败：${stage.error_message || '等待重试'}`,modelInfo?.model_name || modelInfo?.name || '当前 Backend'];
+        if (stage.status === 'PAUSED') return ['', '已人工暂停', modelInfo?.model_name || modelInfo?.name || '当前 Backend'];
+        if (stage.status === 'CANCELLED') return ['', '任务已取消', modelInfo?.model_name || modelInfo?.name || '当前 Backend'];
+      }
       const phase = latestRun(data)?.phase;
       const runningRoles = phase === 'PARTY_ANALYSIS'
         ? ['BUYER_CASE_ANALYST','SELLER_CASE_ANALYST']
@@ -616,9 +636,17 @@
       const primaryClaim = (data.claims || []).find(item => item.material) || (data.claims || [])[0];
       const actionLabel = primaryActionLabel(data);
       const elapsed = workflowStartedAt ? Math.max(0, Math.floor((Date.now() - workflowStartedAt) / 1000)) : 0;
-      const phaseStatus = actionBusy
-        ? `${run ? phaseLabels[run.phase] || run.phase : '创建调查运行'} · ${elapsed}s`
+      const job = data.workflow_job || currentWorkflowJob;
+      const phaseStatus = job && jobIsBusy(job)
+        ? `${phaseLabels[job.current_phase] || job.current_phase || '任务排队'} · ${job.status} · ${elapsed}s`
         : run ? phaseLabels[run.phase] || run.phase : '待启动';
+      const jobControls = job && !job.terminal ? `
+        <div class="workflow-controls">
+          ${job.status === 'PAUSED'
+            ? '<button class="workflow-control" id="resumeWorkflow" type="button">恢复任务</button>'
+            : '<button class="workflow-control" id="pauseWorkflow" type="button">人工暂停</button>'}
+          <button class="workflow-control danger" id="cancelWorkflow" type="button">取消任务</button>
+        </div>` : '';
       return `
         <aside class="agent-panel">
           <div class="agent-panel-head">
@@ -663,6 +691,7 @@
             </div>
           </section>
           <button class="primary-action" id="primaryAction" type="button" ${actionBusy ? 'disabled' : ''}>${actionBusy ? `Agent 协作运行中 ${elapsed}s` : esc(actionLabel)} <span>→</span></button>
+          ${jobControls}
           <button class="agent-details-link" type="button" data-open-agents>查看每个 Agent 的模型、Token 与完整输出</button>
           <div class="guard-note">${guard ? `Decision Guard ${guard.passed ? '已通过' : '未通过'} · ${esc(guard.guard_version)}` : 'AI 建议仅供纠纷调解参考，不构成司法裁决'}</div>
         </aside>`;
@@ -670,6 +699,7 @@
 
     function primaryActionLabel(data) {
       const state = data.case.state;
+      if (data.workflow_job?.error?.code === 'QUEUE_UNAVAILABLE') return '重新投递 Agent 任务';
       const needsRoutingReview = (data.claims || []).some(item => item.material && item.routing_status === 'NEEDS_HUMAN');
       if (needsRoutingReview && ['SUBMITTED','EVIDENCE_LOCKED'].includes(state)) return '等待人工确认争议类型';
       if (['SUBMITTED','EVIDENCE_LOCKED'].includes(state)) return '启动多 Agent 调查';
@@ -777,6 +807,7 @@
     async function runPrimaryAction() {
       if (!currentData || actionBusy) return;
       const state = currentData.case.state;
+      const existingJob = currentData.workflow_job || currentWorkflowJob;
       const needsRoutingReview = (currentData.claims || []).some(item => item.material && item.routing_status === 'NEEDS_HUMAN');
       if (needsRoutingReview && ['SUBMITTED','EVIDENCE_LOCKED'].includes(state)) {
         return showToast('当前 Claim 存在冲突、低置信度或高风险路由，请由审核员确认争议类型后再启动 Agent。', true);
@@ -788,13 +819,21 @@
       if (state === 'HUMAN_REVIEW') return openReviewDialog();
       if (['RESOLVED','APPEALED','CLOSED','REJECTED'].includes(state)) return openAgentDialog();
       const isWorkflowAction = ['SUBMITTED','EVIDENCE_LOCKED','UNDER_INVESTIGATION','READY_FOR_REVIEW'].includes(state);
+      if (isWorkflowAction && existingJob?.status === 'PAUSED') return controlWorkflow('resume');
       actionBusy = true;
-      if (isWorkflowAction) startWorkflowPolling();
+      if (isWorkflowAction) workflowStartedAt = Date.now();
       render(currentData);
       try {
         if (isWorkflowAction) {
-          await api(`/cases/${encodeURIComponent(currentCaseId)}/workflow`, {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
-          showToast('Agent 工作流已推进到下一个审核边界。');
+          const job = await api(`/cases/${encodeURIComponent(currentCaseId)}/workflow`, {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+          currentWorkflowJob = job;
+          currentData.workflow_job = job;
+          actionBusy = jobIsBusy(job);
+          connectWorkflowEvents(job);
+          showToast(`异步任务已受理：${job.job_id}`);
+          render(currentData);
+          await loadCases();
+          return;
         } else if (state === 'APPROVED') {
           await api(`/cases/${encodeURIComponent(currentCaseId)}/execution`, {
             method:'POST', headers:{'Content-Type':'application/json'},
@@ -814,27 +853,86 @@
       } catch (error) {
         showToast(error.message, true);
       } finally {
-        stopWorkflowPolling();
-        actionBusy = false;
-        await loadCase(currentCaseId);
+        if (!isWorkflowAction || !currentWorkflowJob || currentWorkflowJob.terminal) {
+          actionBusy = false;
+          await loadCase(currentCaseId);
+        }
       }
     }
 
-    function startWorkflowPolling() {
-      stopWorkflowPolling();
-      workflowStartedAt = Date.now();
-      workflowPollTimer = setInterval(async () => {
-        try {
-          const fresh = await api(`/cases/${encodeURIComponent(currentCaseId)}/workbench`);
-          if (actionBusy) render(fresh);
-        } catch (_) {}
-      }, 900);
+    function closeWorkflowEvents() {
+      if (workflowEventSource) workflowEventSource.close();
+      workflowEventSource = null;
     }
 
-    function stopWorkflowPolling() {
-      if (workflowPollTimer) clearInterval(workflowPollTimer);
-      workflowPollTimer = null;
-      workflowStartedAt = null;
+    function connectWorkflowEvents(job) {
+      if (!job || job.terminal || job.status === 'PAUSED' || job.error?.code === 'QUEUE_UNAVAILABLE') return closeWorkflowEvents();
+      if (workflowEventSource?.datasetJobId === job.job_id) return;
+      closeWorkflowEvents();
+      workflowStartedAt = workflowStartedAt || Date.now();
+      const source = new EventSource(job.events_url || `/workflow-jobs/${encodeURIComponent(job.job_id)}/events`);
+      source.datasetJobId = job.job_id;
+      workflowEventSource = source;
+      source.onmessage = async event => {
+        try {
+          const progress = JSON.parse(event.data);
+          const [freshJob, freshCase] = await Promise.all([
+            api(`/workflow-jobs/${encodeURIComponent(job.job_id)}`),
+            api(`/cases/${encodeURIComponent(currentCaseId)}/workbench`)
+          ]);
+          if (freshJob.case_id !== currentCaseId) return;
+          currentWorkflowJob = freshJob;
+          freshCase.workflow_job = freshJob;
+          actionBusy = jobIsBusy(freshJob);
+          render(freshCase);
+          if (freshJob.terminal || freshJob.status === 'PAUSED') {
+            closeWorkflowEvents();
+            workflowStartedAt = null;
+            actionBusy = false;
+            render(freshCase);
+            await loadCases();
+            const message = freshJob.status === 'COMPLETED'
+              ? `Agent 工作流已停止在 ${freshJob.result?.workflow_boundary || '业务边界'}`
+              : freshJob.status === 'PAUSED' ? 'Agent 工作流已暂停。'
+              : `Agent 工作流已结束：${freshJob.status}`;
+            showToast(message, !['COMPLETED','PAUSED','CANCELLED'].includes(freshJob.status));
+          } else if (progress.event_type === 'JOB_RETRY_SCHEDULED') {
+            showToast(`模型调用失败，准备第 ${freshJob.attempt_count + 1} 次任务尝试。`);
+          }
+        } catch (error) {
+          showToast(`进度刷新失败：${error.message}`, true);
+        }
+      };
+      source.onerror = async () => {
+        try {
+          const latest = await api(`/workflow-jobs/${encodeURIComponent(job.job_id)}`);
+          currentWorkflowJob = latest;
+          if (latest.terminal || latest.status === 'PAUSED') closeWorkflowEvents();
+        } catch (_) {}
+      };
+    }
+
+    async function controlWorkflow(action) {
+      const job = currentData?.workflow_job || currentWorkflowJob;
+      if (!job) return showToast('当前没有可控制的 Workflow Job。', true);
+      const reasons = {
+        pause:'审核员从工作台请求人工暂停',
+        resume:'审核员确认恢复异步调查',
+        cancel:'审核员从工作台取消异步调查'
+      };
+      try {
+        const updated = await api(`/workflow-jobs/${encodeURIComponent(job.job_id)}/${action}`, {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({actor_id:'workbench-reviewer', reason:reasons[action]})
+        });
+        currentWorkflowJob = updated;
+        currentData.workflow_job = updated;
+        actionBusy = jobIsBusy(updated);
+        render(currentData);
+        if (action === 'resume') connectWorkflowEvents(updated);
+        if (updated.terminal || updated.status === 'PAUSED') closeWorkflowEvents();
+        showToast(action === 'pause' ? '暂停请求已提交，将在安全阶段边界生效。' : action === 'resume' ? '任务已重新入队。' : '取消请求已提交。');
+      } catch (error) { showToast(error.message, true); }
     }
 
     async function resetTextDemo() {
@@ -856,6 +954,9 @@
 
     function bindDynamicEvents() {
       document.getElementById('primaryAction')?.addEventListener('click', runPrimaryAction);
+      document.getElementById('pauseWorkflow')?.addEventListener('click', () => controlWorkflow('pause'));
+      document.getElementById('resumeWorkflow')?.addEventListener('click', () => controlWorkflow('resume'));
+      document.getElementById('cancelWorkflow')?.addEventListener('click', () => controlWorkflow('cancel'));
       document.getElementById('refreshCase')?.addEventListener('click', () => loadCase(currentCaseId));
       document.getElementById('resetTextDemo')?.addEventListener('click', resetTextDemo);
       document.querySelectorAll('[data-open-agents]').forEach(button => button.addEventListener('click', openAgentDialog));
@@ -900,7 +1001,12 @@
       history.replaceState(null, '', `${location.pathname}?case_id=${encodeURIComponent(caseId)}`);
       document.getElementById('app').innerHTML = '<div class="loading-view"><div><div class="loader"></div>正在读取案件材料与 Agent 状态…</div></div>';
       try {
-        render(await api(`/cases/${encodeURIComponent(caseId)}/workbench`));
+        const data = await api(`/cases/${encodeURIComponent(caseId)}/workbench`);
+        currentWorkflowJob = data.workflow_job || null;
+        actionBusy = jobIsBusy(currentWorkflowJob);
+        render(data);
+        if (actionBusy) connectWorkflowEvents(currentWorkflowJob);
+        else closeWorkflowEvents();
       } catch (error) {
         document.getElementById('app').innerHTML = `<div class="error-card"><strong>案件加载失败</strong><div>${esc(error.message)}</div></div>`;
         showToast(error.message, true);

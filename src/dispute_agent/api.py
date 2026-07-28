@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+import asyncio
+import json
 from datetime import datetime
 from typing import Any
 
-from fastapi import Depends, FastAPI, HTTPException, Query
-from fastapi.responses import HTMLResponse
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
+from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from dispute_agent.db import SessionLocal
-from dispute_agent.errors import DisputeAgentError, NotFoundError
+from dispute_agent.errors import DisputeAgentError, NotFoundError, QueueUnavailableError
 from dispute_agent.agents.backend import StructuredGenerationBackend, create_generation_backend
 from dispute_agent.agents.runtime import AgentRuntime
 from dispute_agent.agents.workflow import InvestigationWorkflow
@@ -28,6 +30,8 @@ from dispute_agent.services.tools import ToolService
 from dispute_agent.services.workbench import WorkbenchService
 from dispute_agent.services.claim_router import ClaimRoutingService
 from dispute_agent.services.intake import CaseIntakeService
+from dispute_agent.services.workflow_jobs import TERMINAL_JOB_STATUSES, WorkflowJobExecutor, WorkflowJobService
+from dispute_agent.workflow_queue import WorkflowQueue, create_workflow_queue
 from dispute_agent.intake_schemas import (
     ChatBatchImportRequest,
     DisputeSubmitRequest,
@@ -68,6 +72,11 @@ class ToolCallRequest(BaseModel):
 
 class WorkflowRequest(BaseModel):
     actor_id: str = "investigation-workflow"
+
+
+class WorkflowControlRequest(BaseModel):
+    actor_id: str = Field(min_length=1)
+    reason: str = Field(min_length=1, max_length=1000)
 
 
 class EvidenceAndResumeRequest(BaseModel):
@@ -142,6 +151,7 @@ def create_app(
     *,
     settings: Settings | None = None,
     generation_backend: StructuredGenerationBackend | None = None,
+    workflow_queue: WorkflowQueue | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     backend = generation_backend or create_generation_backend(settings)
@@ -162,6 +172,13 @@ def create_app(
         runtime=runtime,
         tools=tool_service,
         decision_guard=decision_guard,
+    )
+    workflow_jobs = WorkflowJobService(session_factory, settings=settings)
+    workflow_executor = WorkflowJobExecutor(workflow_jobs, workflow, settings=settings)
+    task_queue = workflow_queue or create_workflow_queue(
+        settings,
+        executor=workflow_executor,
+        jobs=workflow_jobs,
     )
     evidence_submission = EvidenceSubmissionService(session_factory, orchestrator=orchestrator)
     human_review = HumanReviewService(
@@ -192,6 +209,9 @@ def create_app(
     app.state.generation_backend = backend
     app.state.skill_registry = skill_registry
     app.state.claim_router = routing
+    app.state.workflow_jobs = workflow_jobs
+    app.state.workflow_executor = workflow_executor
+    app.state.workflow_queue = task_queue
 
     def get_session() -> Session:
         session = session_factory()
@@ -213,6 +233,8 @@ def create_app(
             if exc.code in {"CONFLICT", "INVALID_STATE_TRANSITION"}
             else 502
             if exc.code == "MODEL_BACKEND_ERROR"
+            else 503
+            if exc.code == "QUEUE_UNAVAILABLE"
             else 400
         )
         return JSONResponse(status_code=status, content={"error": {"code": exc.code, "message": str(exc)}})
@@ -229,6 +251,10 @@ def create_app(
     @app.get("/model/health")
     def model_health(probe: bool = Query(default=True)) -> dict[str, Any]:
         return backend.health_check(probe=probe)
+
+    @app.get("/workflow/health")
+    def workflow_health() -> dict[str, Any]:
+        return task_queue.health()
 
     @app.get("/dispute-types")
     def dispute_types() -> dict[str, Any]:
@@ -395,7 +421,9 @@ def create_app(
 
     @app.get("/cases/{case_id}/workbench")
     def get_workbench(case_id: str) -> dict[str, Any]:
-        return workbench.get(case_id)
+        result = workbench.get(case_id)
+        result["workflow_job"] = workflow_jobs.latest_for_case(case_id)
+        return result
 
     @app.post("/cases/{case_id}/demo-reset")
     def reset_text_demo(case_id: str) -> dict[str, Any]:
@@ -414,12 +442,111 @@ def create_app(
     def start_run(case_id: str) -> dict[str, Any]:
         return orchestrator.start(case_id)
 
-    @app.post("/cases/{case_id}/workflow")
+    def dispatch_workflow_job(job: dict[str, Any]) -> dict[str, Any]:
+        if job["status"] in {"QUEUED", "RETRYING"}:
+            try:
+                task_queue.enqueue(job)
+            except QueueUnavailableError as exc:
+                workflow_jobs.record_dispatch_error(job["job_id"], exc)
+                raise
+            return workflow_jobs.record_dispatched(job["job_id"])
+        return workflow_jobs.get(job["job_id"])
+
+    @app.post("/cases/{case_id}/workflow", status_code=status.HTTP_202_ACCEPTED)
     def run_workflow(case_id: str, request: WorkflowRequest | None = None) -> dict[str, Any]:
-        return workflow.run_until_blocked(
+        job, created = workflow_jobs.create_or_get_active(
             case_id,
             actor_id=request.actor_id if request else "investigation-workflow",
         )
+        if created or (job.get("error") or {}).get("code") == "QUEUE_UNAVAILABLE":
+            return dispatch_workflow_job(job)
+        return job
+
+    @app.get("/workflow-jobs/{job_id}")
+    def get_workflow_job(job_id: str) -> dict[str, Any]:
+        return workflow_jobs.get(job_id)
+
+    @app.get("/cases/{case_id}/workflow-jobs/latest")
+    def get_latest_workflow_job(case_id: str) -> dict[str, Any]:
+        job = workflow_jobs.latest_for_case(case_id)
+        if job is None:
+            raise NotFoundError(f"案件尚无 Workflow Job: {case_id}")
+        return job
+
+    @app.get("/workflow-jobs/{job_id}/events")
+    async def stream_workflow_events(job_id: str, request: Request) -> StreamingResponse:
+        workflow_jobs.get(job_id)
+        header_sequence = request.headers.get("last-event-id", "0")
+        query_sequence = request.query_params.get("after", "0")
+        try:
+            cursor = max(int(header_sequence), int(query_sequence), 0)
+        except ValueError:
+            cursor = 0
+
+        async def event_stream():  # type: ignore[no-untyped-def]
+            nonlocal cursor
+            idle_ticks = 0
+            while True:
+                if await request.is_disconnected():
+                    return
+                events = workflow_jobs.events_after(job_id, cursor)
+                for event in events:
+                    cursor = event["sequence"]
+                    payload = json.dumps(event, ensure_ascii=False, separators=(",", ":"))
+                    yield f"id: {cursor}\ndata: {payload}\n\n"
+                job = workflow_jobs.get(job_id)
+                if job["status"] in TERMINAL_JOB_STATUSES | {"PAUSED"} and cursor >= job["event_sequence"]:
+                    return
+                idle_ticks += 1
+                if not events and idle_ticks % max(
+                    1,
+                    int(10 / settings.workflow_sse_poll_interval_seconds),
+                ) == 0:
+                    yield ": heartbeat\n\n"
+                await asyncio.sleep(settings.workflow_sse_poll_interval_seconds)
+
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache, no-transform",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    @app.post("/workflow-jobs/{job_id}/pause", status_code=status.HTTP_202_ACCEPTED)
+    def pause_workflow_job(job_id: str, request: WorkflowControlRequest) -> dict[str, Any]:
+        before = workflow_jobs.get(job_id)
+        job = workflow_jobs.request_pause(
+            job_id,
+            actor_id=request.actor_id,
+            reason=request.reason,
+        )
+        if before["status"] in {"QUEUED", "RETRYING"}:
+            task_queue.cancel(before["rq_job_id"])
+        return job
+
+    @app.post("/workflow-jobs/{job_id}/resume", status_code=status.HTTP_202_ACCEPTED)
+    def resume_workflow_job(job_id: str, request: WorkflowControlRequest) -> dict[str, Any]:
+        job = workflow_jobs.resume(
+            job_id,
+            actor_id=request.actor_id,
+            reason=request.reason,
+        )
+        return dispatch_workflow_job(job)
+
+    @app.post("/workflow-jobs/{job_id}/cancel", status_code=status.HTTP_202_ACCEPTED)
+    def cancel_workflow_job(job_id: str, request: WorkflowControlRequest) -> dict[str, Any]:
+        before = workflow_jobs.get(job_id)
+        job = workflow_jobs.request_cancel(
+            job_id,
+            actor_id=request.actor_id,
+            reason=request.reason,
+        )
+        if before["status"] in {"QUEUED", "RETRYING", "PAUSED"}:
+            task_queue.cancel(before["rq_job_id"])
+        return job
 
     @app.get("/cases/{case_id}/agent-outputs")
     def list_agent_outputs(case_id: str, case_run_id: str | None = Query(default=None)) -> list[dict[str, Any]]:
@@ -591,7 +718,8 @@ def create_app(
             actor_id=request.actor_id,
         )
         if request.auto_continue:
-            result["workflow"] = workflow.run_until_blocked(case_id, actor_id=request.actor_id)
+            job, _created = workflow_jobs.create_or_get_active(case_id, actor_id=request.actor_id)
+            result["workflow_job"] = dispatch_workflow_job(job)
         return result
 
     @app.post("/cases/{case_id}/recover")

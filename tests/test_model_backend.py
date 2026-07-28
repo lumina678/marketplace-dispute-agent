@@ -245,7 +245,8 @@ def test_fastapi_wires_custom_backend_and_exposes_model_and_full_payload(context
             assert health.json()["status"] == "ok"
 
             workflow = await client.post("/cases/case_clear_mismatch/workflow")
-            assert workflow.status_code == 200
+            assert workflow.status_code == 202
+            assert workflow.json()["status"] == "COMPLETED"
             outputs = (await client.get("/cases/case_clear_mismatch/agent-outputs")).json()
             assert len(outputs) == 4
             assert {item["model_name"] for item in outputs} == {"my-private-model"}
@@ -288,8 +289,9 @@ def test_fake_openai_compatible_model_runs_the_complete_four_agent_workflow(cont
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.post("/cases/case_clear_mismatch/workflow")
-            assert response.status_code == 200
-            assert response.json()["workflow_boundary"] == "HUMAN_REVIEW_REQUIRED"
+            assert response.status_code == 202
+            assert response.json()["status"] == "COMPLETED"
+            assert response.json()["result"]["workflow_boundary"] == "HUMAN_REVIEW_REQUIRED"
             outputs = (await client.get("/cases/case_clear_mismatch/agent-outputs")).json()
             assert len(outputs) == 4
             assert {item["model_name"] for item in outputs} == {
@@ -306,7 +308,7 @@ def test_fake_openai_compatible_model_runs_the_complete_four_agent_workflow(cont
     }
 
 
-def test_fastapi_returns_502_and_keeps_case_paused_when_model_fails(context) -> None:
+def test_fastapi_accepts_job_and_records_failure_when_model_fails(context) -> None:
     def fail(*_args):  # type: ignore[no-untyped-def]
         raise RuntimeError("private provider unavailable")
 
@@ -317,8 +319,11 @@ def test_fastapi_returns_502_and_keeps_case_paused_when_model_fails(context) -> 
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.post("/cases/case_clear_mismatch/workflow")
-            assert response.status_code == 502
-            assert response.json()["error"]["code"] == "MODEL_BACKEND_ERROR"
+            assert response.status_code == 202
+            job = response.json()
+            assert job["status"] == "FAILED"
+            assert job["attempt_count"] == job["max_attempts"] == 3
+            assert job["error"]["code"] == "MODEL_BACKEND_ERROR"
             state = (await client.get("/cases/case_clear_mismatch")).json()
             assert state["state"] == "UNDER_INVESTIGATION"
             assert state["active_run"]["status"] == "PAUSED"

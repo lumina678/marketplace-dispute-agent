@@ -82,9 +82,10 @@ XIANYU_MODEL_RESPONSE_FORMAT=none
 
 - 传输错误、超时、HTTP 408/409/425/429 和 5xx 会按指数退避重试。
 - JSON 解析或 Schema 校验失败会发起独立的结构化修复请求，要求模型重新生成完整 JSON。
-- 重试耗尽后 API 返回 `502 MODEL_BACKEND_ERROR`。
+- `POST /cases/{id}/workflow` 只负责创建持久化 Job，立即返回 `202`；模型调用不会占用该 HTTP 请求。
+- Worker 内的模型调用和 Job 投递分别重试；重试耗尽后 Job 进入 `FAILED`，`error.code=MODEL_BACKEND_ERROR`。
 - 自有模型失败时绝不调用规则构建器作为静默 fallback。
-- 案件保持在当前 `PAUSED` phase，可以在模型服务恢复后重新调用 workflow；已经持久化且输入指纹相同的 Agent 输出会复用。
+- 案件保持在当前可恢复 phase；模型服务恢复后可创建新 Job，已经持久化且输入指纹相同的 Agent 输出会复用。
 - API 响应、健康检查和工作台不会返回 API Key。
 
 可选参数及默认值：
@@ -105,7 +106,9 @@ XIANYU_MODEL_SCHEMA_REPAIR_ATTEMPTS=1
 ```bash
 cp .env.example .env
 # 编辑 .env 中的三项模型配置
+docker compose up -d redis
 .venv/bin/uvicorn dispute_agent.api:app --reload
+.venv/bin/xianyu-worker
 ```
 
 先确认实际加载的 Backend：
@@ -119,6 +122,8 @@ curl 'http://127.0.0.1:8000/model/health?probe=true'
 
 ```bash
 curl -X POST http://127.0.0.1:8000/cases/case_clear_mismatch/workflow
+curl http://127.0.0.1:8000/workflow-jobs/<job_id>
+curl -N http://127.0.0.1:8000/workflow-jobs/<job_id>/events
 curl http://127.0.0.1:8000/cases/case_clear_mismatch/agent-outputs
 ```
 

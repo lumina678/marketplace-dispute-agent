@@ -207,8 +207,9 @@ def test_complete_generic_intake_freezes_and_runs_agent_workflow(context) -> Non
             assert "系统检测内存 8GB" in inspection.json()["text_content"]
 
             workflow = await client.post(f"/cases/{ids['case_id']}/workflow", json={})
-            assert workflow.status_code == 200, workflow.text
-            assert workflow.json()["workflow_boundary"] == "HUMAN_REVIEW_REQUIRED"
+            assert workflow.status_code == 202, workflow.text
+            assert workflow.json()["status"] == "COMPLETED"
+            assert workflow.json()["result"]["workflow_boundary"] == "HUMAN_REVIEW_REQUIRED"
 
     asyncio.run(exercise())
 

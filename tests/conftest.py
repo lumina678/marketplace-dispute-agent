@@ -30,6 +30,7 @@ def context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestContext:
     # Tests must remain deterministic even when a developer has configured a
     # private model in the project-level .env for interactive workbench use.
     monkeypatch.setenv("XIANYU_MODEL_BACKEND", "rule_based")
+    monkeypatch.setenv("XIANYU_WORKFLOW_QUEUE_BACKEND", "inline")
     get_settings.cache_clear()
     database_url = f"sqlite:///{tmp_path / 'test.db'}"
     engine = create_database_engine(database_url)
@@ -44,6 +45,10 @@ def context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestContext:
         default_tool_call_budget=30,
         default_token_budget=40000,
         max_phase_failures=2,
+        workflow_queue_backend="inline",
+        workflow_job_timeout_seconds=120,
+        workflow_heartbeat_interval_seconds=1,
+        workflow_stale_after_seconds=5,
     )
     state_machine = StateMachineService(settings.state_machine_path)
     result = TestContext(

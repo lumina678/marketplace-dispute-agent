@@ -36,8 +36,9 @@
 | 19. 确定性 Router | [`src/dispute_agent/services/claim_router.py`](src/dispute_agent/services/claim_router.py)、[`config/dispute_router.json`](config/dispute_router.json)、[`docs/STEPS_19.md`](docs/STEPS_19.md) | 按用户声明、平台原因码和版本化文本规则路由 Claim，保存追加式审计历史，模型候选、歧义、假货和未知类型固定转人工 |
 | 20. Skill 驱动完整编排 | [`src/dispute_agent/agents/runtime.py`](src/dispute_agent/agents/runtime.py)、[`src/dispute_agent/agents/heuristics.py`](src/dispute_agent/agents/heuristics.py)、[`src/dispute_agent/services/decision_guard.py`](src/dispute_agent/services/decision_guard.py)、[`docs/STEPS_20.md`](docs/STEPS_20.md) | 补齐缺件、空包、运输损坏政策；由绑定 Skill 裁剪上下文和工具；生成类型专属补问；Guard Profile 按争议类型执行独立边界 |
 | 21. 通用模拟案件接入 | [`src/dispute_agent/services/intake.py`](src/dispute_agent/services/intake.py)、[`src/dispute_agent/intake_schemas.py`](src/dispute_agent/intake_schemas.py)、[`docs/INTAKE_API.md`](docs/INTAKE_API.md)、[`docs/STEPS_21.md`](docs/STEPS_21.md) | 通过幂等 API 创建交易、导入商品和聊天、提交争议/Claim、上传文字证据，并以版本检查和 Manifest Hash 冻结可重放案件基线 |
+| 22. 异步任务和实时进度 | [`src/dispute_agent/services/workflow_jobs.py`](src/dispute_agent/services/workflow_jobs.py)、[`src/dispute_agent/workflow_queue.py`](src/dispute_agent/workflow_queue.py)、[`src/dispute_agent/worker.py`](src/dispute_agent/worker.py)、[`docs/STEPS_22.md`](docs/STEPS_22.md) | `POST /workflow` 立即返回持久化 Job；Redis/RQ Worker 执行并重试；SSE 展示 Agent 阶段；支持心跳、超时、去重、暂停、取消和重启恢复 |
 
-第五至第七步的详细约定见 [`docs/STEPS_5_7.md`](docs/STEPS_5_7.md)，第八至第十步见 [`docs/STEPS_8_10.md`](docs/STEPS_8_10.md)，第十一至第十二步见 [`docs/STEPS_11_12.md`](docs/STEPS_11_12.md)，第十三至第十四步见 [`docs/STEPS_13_14.md`](docs/STEPS_13_14.md)，第十五至第十六步见 [`docs/STEPS_15_16.md`](docs/STEPS_15_16.md)，第十七至第十八步见 [`docs/STEPS_17_18.md`](docs/STEPS_17_18.md)，第十九步见 [`docs/STEPS_19.md`](docs/STEPS_19.md)，第二十步见 [`docs/STEPS_20.md`](docs/STEPS_20.md)，第二十一步见 [`docs/STEPS_21.md`](docs/STEPS_21.md)。默认使用无需 API Key 的 `rule-based-baseline-v1`，自有模型接入与故障语义见 [`docs/MODEL_INTEGRATION.md`](docs/MODEL_INTEGRATION.md)。
+第五至第七步的详细约定见 [`docs/STEPS_5_7.md`](docs/STEPS_5_7.md)，第八至第十步见 [`docs/STEPS_8_10.md`](docs/STEPS_8_10.md)，第十一至第十二步见 [`docs/STEPS_11_12.md`](docs/STEPS_11_12.md)，第十三至第十四步见 [`docs/STEPS_13_14.md`](docs/STEPS_13_14.md)，第十五至第十六步见 [`docs/STEPS_15_16.md`](docs/STEPS_15_16.md)，第十七至第十八步见 [`docs/STEPS_17_18.md`](docs/STEPS_17_18.md)，第十九步见 [`docs/STEPS_19.md`](docs/STEPS_19.md)，第二十步见 [`docs/STEPS_20.md`](docs/STEPS_20.md)，第二十一步见 [`docs/STEPS_21.md`](docs/STEPS_21.md)，第二十二步见 [`docs/STEPS_22.md`](docs/STEPS_22.md)。默认使用无需 API Key 的 `rule-based-baseline-v1`，自有模型接入与故障语义见 [`docs/MODEL_INTEGRATION.md`](docs/MODEL_INTEGRATION.md)。
 
 ## 本地运行
 
@@ -50,10 +51,17 @@ python3 -m venv .venv
 .venv/bin/xianyu-seed
 ```
 
-启动 FastAPI：
+启动 Redis（需要 Docker Desktop 已运行）：
+
+```bash
+docker compose up -d redis
+```
+
+分别启动 FastAPI 和 RQ Worker；二者必须读取同一份 `.env`：
 
 ```bash
 .venv/bin/uvicorn dispute_agent.api:app --reload
+.venv/bin/xianyu-worker
 ```
 
 API 文档位于 `http://127.0.0.1:8000/docs`。
@@ -86,14 +94,17 @@ curl http://127.0.0.1:8000/model
 curl 'http://127.0.0.1:8000/model/health?probe=true'
 ```
 
-模型传输失败或 Schema 修复耗尽时，workflow 返回 `502 MODEL_BACKEND_ERROR` 并保持案件当前阶段暂停，不会静默回退到规则基线。工作台会展示当前 Backend，以及每个 Agent 的模型名、Token usage 和完整结构化输出。完整兼容格式、可选配置和非 OpenAI-compatible 适配示例见 [`docs/MODEL_INTEGRATION.md`](docs/MODEL_INTEGRATION.md)。
+模型传输失败或 Schema 修复耗尽时，HTTP 请求仍已用 `202` 接受；后台 Job 按配置重试，最终把 `MODEL_BACKEND_ERROR` 持久化到 Job，不会静默回退到规则基线。工作台会展示当前 Backend、实时阶段、重试状态，以及每个 Agent 的模型名、Token usage 和完整结构化输出。完整兼容格式、可选配置和非 OpenAI-compatible 适配示例见 [`docs/MODEL_INTEGRATION.md`](docs/MODEL_INTEGRATION.md)。
 
-主演示案件 `case_clear_mismatch` 当前采用纯文本闭环：交易前商品描述、双方锁定聊天、物流签收事件和平台设备信息文本导出，不依赖图片或视频。工作台启动调查后会每 900ms 轮询真实案件状态，依次呈现双方 Agent、证据规则 Agent、裁决 Agent、Decision Guard、人工审核与模拟执行。点击页面底部“重置文本演示”可以清除该案件之前的运行记录并重复演示完整流程。
+主演示案件 `case_clear_mismatch` 当前采用纯文本闭环：交易前商品描述、双方锁定聊天、物流签收事件和平台设备信息文本导出，不依赖图片或视频。工作台启动调查后通过 SSE 接收持久化进度，依次呈现双方 Agent、证据规则 Agent、裁决 Agent、Decision Guard、人工审核与模拟执行；刷新页面后会恢复当前 Job。点击页面底部“重置文本演示”可以清除该案件之前的运行记录并重复演示完整流程。
 
 让调查自动推进到“等待补证”或 `HUMAN_REVIEW`：
 
 ```bash
 curl -X POST http://127.0.0.1:8000/cases/case_clear_mismatch/workflow
+# 从响应取得 job_id 后查询状态或订阅 SSE：
+curl http://127.0.0.1:8000/workflow-jobs/<job_id>
+curl -N http://127.0.0.1:8000/workflow-jobs/<job_id>/events
 ```
 
 读取冻结审核包并批准固定决定版本：

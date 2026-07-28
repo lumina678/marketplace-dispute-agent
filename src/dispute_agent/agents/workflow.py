@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from dispute_agent.agents.question_planner import EvidenceGapQuestionPlanner
 from dispute_agent.agents.runtime import AgentRuntime
+from dispute_agent.agents.workflow_hooks import WorkflowHooks
 from dispute_agent.db import SessionLocal
 from dispute_agent.errors import ConflictError
 from dispute_agent.services.orchestrator import CaseOrchestrator
@@ -36,21 +37,46 @@ class InvestigationWorkflow:
         )
         self.decision_guard = decision_guard or DecisionGuard(session_factory)
 
-    def run_until_blocked(self, case_id: str, *, actor_id: str = "investigation-workflow") -> dict[str, Any]:
+    def run_until_blocked(
+        self,
+        case_id: str,
+        *,
+        actor_id: str = "investigation-workflow",
+        hooks: WorkflowHooks | None = None,
+    ) -> dict[str, Any]:
+        hooks = hooks or WorkflowHooks()
         view = self.orchestrator.start(case_id, actor_id=actor_id)
+        hooks.run_started(view["case_run_id"], view["phase"])
         for _ in range(12):
+            hooks.check_control()
             state = view["state"]
             phase = view["phase"]
             if state in {"WAITING_FOR_BUYER", "WAITING_FOR_SELLER"}:
-                return self._with_boundary(view, "EVIDENCE_RESPONSE_REQUIRED")
+                return self._boundary(hooks, view, "EVIDENCE_RESPONSE_REQUIRED")
             if state == "HUMAN_REVIEW" or phase == "HUMAN_REVIEW":
-                return self._with_boundary(view, "HUMAN_REVIEW_REQUIRED")
+                return self._boundary(hooks, view, "HUMAN_REVIEW_REQUIRED")
             if state != "UNDER_INVESTIGATION":
-                return self._with_boundary(view, "CASE_NOT_AUTOMATABLE")
+                return self._boundary(hooks, view, "CASE_NOT_AUTOMATABLE")
 
             run_id = view["case_run_id"]
             if phase == "PARTY_ANALYSIS":
-                buyer, seller = self.runtime.run_party_analysts(case_id, run_id)
+                roles = ("BUYER_CASE_ANALYST", "SELLER_CASE_ANALYST")
+                for role in roles:
+                    hooks.stage_started(phase, role, run_id)
+
+                def role_completed(role: str, output) -> None:  # type: ignore[no-untyped-def]
+                    hooks.stage_completed(phase, role, run_id, self._output_reference(output))
+
+                def role_failed(role: str, error: Exception) -> None:
+                    hooks.stage_failed(phase, role, run_id, error)
+
+                buyer, seller = self.runtime.run_party_analysts(
+                    case_id,
+                    run_id,
+                    on_role_complete=role_completed,
+                    on_role_failed=role_failed,
+                )
+                hooks.check_control()
                 view = self.orchestrator.submit_phase_result(
                     case_id,
                     case_run_id=run_id,
@@ -62,10 +88,19 @@ class InvestigationWorkflow:
                     actor=actor_id,
                     tokens_used=self._tokens(buyer) + self._tokens(seller),
                 )
+                hooks.phase_committed(phase, view)
                 continue
 
             if phase == "EVIDENCE_REVIEW":
-                report = self.runtime.run_evidence_clerk(case_id, run_id)
+                role = "EVIDENCE_POLICY_CLERK"
+                hooks.stage_started(phase, role, run_id)
+                try:
+                    report = self.runtime.run_evidence_clerk(case_id, run_id)
+                except Exception as exc:
+                    hooks.stage_failed(phase, role, run_id, exc)
+                    raise
+                hooks.stage_completed(phase, role, run_id, self._output_reference(report))
+                hooks.check_control()
                 view = self.orchestrator.submit_phase_result(
                     case_id,
                     case_run_id=run_id,
@@ -74,10 +109,24 @@ class InvestigationWorkflow:
                     actor=actor_id,
                     tokens_used=self._tokens(report),
                 )
+                hooks.phase_committed(phase, view)
                 continue
 
             if phase == "GAP_RESOLUTION":
-                question_plan = self.question_planner.plan(case_id, run_id)
+                role = "EVIDENCE_GAP_PLANNER"
+                hooks.stage_started(phase, role, run_id)
+                try:
+                    question_plan = self.question_planner.plan(case_id, run_id)
+                except Exception as exc:
+                    hooks.stage_failed(phase, role, run_id, exc)
+                    raise
+                hooks.stage_completed(
+                    phase,
+                    role,
+                    run_id,
+                    {"question_count": len(question_plan.get("question_ids", []))},
+                )
+                hooks.check_control()
                 view = self.orchestrator.submit_phase_result(
                     case_id,
                     case_run_id=run_id,
@@ -85,10 +134,19 @@ class InvestigationWorkflow:
                     payload=question_plan,
                     actor=actor_id,
                 )
+                hooks.phase_committed(phase, view)
                 continue
 
             if phase == "ADJUDICATION":
-                recommendation = self.runtime.run_adjudicator(case_id, run_id)
+                role = "ADJUDICATION_AGENT"
+                hooks.stage_started(phase, role, run_id)
+                try:
+                    recommendation = self.runtime.run_adjudicator(case_id, run_id)
+                except Exception as exc:
+                    hooks.stage_failed(phase, role, run_id, exc)
+                    raise
+                hooks.stage_completed(phase, role, run_id, self._output_reference(recommendation))
+                hooks.check_control()
                 payload = recommendation.payload
                 self.runtime.assert_case_tool_allowed(case_id, "resolution.create_draft")
                 draft = self.tools.call(
@@ -117,15 +175,29 @@ class InvestigationWorkflow:
                     actor=actor_id,
                     tokens_used=self._tokens(recommendation),
                 )
+                hooks.phase_committed(phase, view)
                 continue
 
             if phase == "GUARD_CHECK":
-                guard_result = self.decision_guard.evaluate(
-                    case_id,
-                    run_id,
-                    decision_id=view["checkpoint"].get("decision_id"),
-                )
+                role = "DECISION_GUARD"
+                hooks.stage_started(phase, role, run_id)
+                try:
+                    guard_result = self.decision_guard.evaluate(
+                        case_id,
+                        run_id,
+                        decision_id=view["checkpoint"].get("decision_id"),
+                    )
+                except Exception as exc:
+                    hooks.stage_failed(phase, role, run_id, exc)
+                    raise
                 guard_payload = guard_result.model_dump(mode="json")
+                hooks.stage_completed(
+                    phase,
+                    role,
+                    run_id,
+                    {"passed": guard_result.passed, "guard_result_id": guard_result.guard_result_id},
+                )
+                hooks.check_control()
                 view = self.orchestrator.submit_phase_result(
                     case_id,
                     case_run_id=run_id,
@@ -133,12 +205,15 @@ class InvestigationWorkflow:
                     payload=guard_payload,
                     actor=actor_id,
                 )
+                hooks.phase_committed(phase, view)
                 if not guard_result.passed:
-                    return {
+                    result = {
                         **view,
                         "workflow_boundary": "GUARD_REMEDIATION_REQUIRED",
                         "guard_result": guard_payload,
                     }
+                    hooks.boundary_reached("GUARD_REMEDIATION_REQUIRED", result)
+                    return result
                 continue
 
             raise ConflictError(f"工作流没有步骤 8–10 的处理器: {phase}")
@@ -160,3 +235,14 @@ class InvestigationWorkflow:
     @staticmethod
     def _with_boundary(view: dict[str, Any], boundary: str) -> dict[str, Any]:
         return {**view, "workflow_boundary": boundary}
+
+    @classmethod
+    def _boundary(
+        cls,
+        hooks: WorkflowHooks,
+        view: dict[str, Any],
+        boundary: str,
+    ) -> dict[str, Any]:
+        result = cls._with_boundary(view, boundary)
+        hooks.boundary_reached(boundary, result)
+        return result

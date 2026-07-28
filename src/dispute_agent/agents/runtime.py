@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
-from typing import Any
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any, Callable
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
@@ -57,11 +57,36 @@ class AgentRuntime:
         self.skill_registry = skill_registry or get_skill_registry()
         self.store = AgentOutputStore()
 
-    def run_party_analysts(self, case_id: str, case_run_id: str) -> tuple[AgentResultEnvelope, AgentResultEnvelope]:
+    def run_party_analysts(
+        self,
+        case_id: str,
+        case_run_id: str,
+        *,
+        on_role_complete: Callable[[str, AgentResultEnvelope], None] | None = None,
+        on_role_failed: Callable[[str, Exception], None] | None = None,
+    ) -> tuple[AgentResultEnvelope, AgentResultEnvelope]:
         with ThreadPoolExecutor(max_workers=2, thread_name_prefix="party-analyst") as executor:
-            buyer_future = executor.submit(self.run_party_analyst, case_id, case_run_id, "BUYER")
-            seller_future = executor.submit(self.run_party_analyst, case_id, case_run_id, "SELLER")
-            return buyer_future.result(), seller_future.result()
+            futures = {
+                executor.submit(self.run_party_analyst, case_id, case_run_id, "BUYER"): "BUYER_CASE_ANALYST",
+                executor.submit(self.run_party_analyst, case_id, case_run_id, "SELLER"): "SELLER_CASE_ANALYST",
+            }
+            results: dict[str, AgentResultEnvelope] = {}
+            failures: list[Exception] = []
+            for future in as_completed(futures):
+                role = futures[future]
+                try:
+                    output = future.result()
+                except Exception as exc:
+                    failures.append(exc)
+                    if on_role_failed:
+                        on_role_failed(role, exc)
+                else:
+                    results[role] = output
+                    if on_role_complete:
+                        on_role_complete(role, output)
+            if failures:
+                raise failures[0]
+            return results["BUYER_CASE_ANALYST"], results["SELLER_CASE_ANALYST"]
 
     def run_party_analyst(self, case_id: str, case_run_id: str, party: str) -> AgentResultEnvelope:
         role = "BUYER_CASE_ANALYST" if party == "BUYER" else "SELLER_CASE_ANALYST"
