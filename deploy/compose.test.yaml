@@ -1,0 +1,12 @@
+services:
+  api:
+    environment:
+      XIANYU_ENVIRONMENT: test
+      XIANYU_MODEL_BACKEND: rule_based
+      XIANYU_READINESS_REQUIRE_WORKER: "true"
+  worker:
+    environment:
+      XIANYU_ENVIRONMENT: test
+      XIANYU_MODEL_BACKEND: rule_based
+  proxy:
+    profiles: ["edge"]

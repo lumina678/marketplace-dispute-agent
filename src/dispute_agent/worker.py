@@ -58,7 +58,13 @@ def main() -> None:
     jobs.recover_stale()
     for pending in jobs.pending_dispatches():
         queue.enqueue(pending)
-    Worker([settings.workflow_queue_name], connection=queue.connection).work(with_scheduler=True)
+    worker_name = f"xianyu-{socket.gethostname()}-{os.getpid()}"
+    Worker(
+        [settings.workflow_queue_name],
+        connection=queue.connection,
+        name=worker_name,
+        worker_ttl=settings.worker_ttl_seconds,
+    ).work(with_scheduler=True)
 
 
 if __name__ == "__main__":

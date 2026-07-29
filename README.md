@@ -2,7 +2,7 @@
 
 本项目是一个面向二手交易争议的多 Agent 调查与裁决辅助系统，通过双方观点分离、证据链构建、版本化规则检索、人工审批和幂等执行，处理普通客服流程无法解决的复杂案件。
 
-> 当前仓库完成了实施计划的前二十一步：基础规格、SQLite 数据层、本地 MCP 工具层、确定性案件编排器、多 Agent 调查、补证恢复、裁决草稿、确定性 Decision Guard、人工审核、模拟执行与回读、申诉重开和二次调查、可重复评测 Harness、案件工作台、Claim 级争议分类、版本化 Skill 框架、确定性 Router、Skill 驱动完整编排和通用模拟案件接入。系统不替代法院、仲裁机构或平台人工裁决员。
+> 当前仓库完成了实施计划的前二十三步：在完整案件闭环、多 Agent 调查、确定性 Router/Skill/Guard、通用模拟案件接入和异步 Workflow 基础上，补齐 PostgreSQL、Redis/RQ、非 root API/Worker 容器、自动迁移、健康检查、Caddy HTTPS 与 staging 部署基础。系统不替代法院、仲裁机构或平台人工裁决员。
 
 ## 当前 MVP
 
@@ -19,7 +19,7 @@
 | 2. 状态机 | [`docs/CASE_STATE_MACHINE.md`](docs/CASE_STATE_MACHINE.md)、[`config/case_state_machine.json`](config/case_state_machine.json) | 定义案件生命周期、流转条件、角色和恢复语义 |
 | 3. 统一 Schema | [`schemas/`](schemas/) | 约束案件材料、Agent 输出、状态机和规则版本 |
 | 4. 规则库 | [`policies/`](policies/) | 提供两个互不重叠的“描述不符”规则版本及确定性选版方法 |
-| 5. 数据层 | [`src/dispute_agent/models.py`](src/dispute_agent/models.py)、[`alembic/`](alembic/) | 18 张 SQLite 表、Alembic 迁移和 5 个可重复导入的种子案件 |
+| 5. 数据层 | [`src/dispute_agent/models.py`](src/dispute_agent/models.py)、[`alembic/`](alembic/) | 18 张关系表、Alembic 迁移和 5 个可重复导入的种子案件；开发兼容 SQLite |
 | 6. 工具层 | [`src/dispute_agent/services/tools.py`](src/dispute_agent/services/tools.py)、[`src/dispute_agent/mcp_server.py`](src/dispute_agent/mcp_server.py) | 12 个带权限、预算、审计和案件隔离的本地工具 |
 | 7. 编排器 | [`src/dispute_agent/services/orchestrator.py`](src/dispute_agent/services/orchestrator.py) | 状态机驱动、checkpoint、暂停恢复、预算升级和事件重放 |
 | 8. 调查 Agent | [`src/dispute_agent/agents/runtime.py`](src/dispute_agent/agents/runtime.py) | 买卖双方独立分析、证据审查、时间线和版本化政策引用 |
@@ -37,10 +37,11 @@
 | 20. Skill 驱动完整编排 | [`src/dispute_agent/agents/runtime.py`](src/dispute_agent/agents/runtime.py)、[`src/dispute_agent/agents/heuristics.py`](src/dispute_agent/agents/heuristics.py)、[`src/dispute_agent/services/decision_guard.py`](src/dispute_agent/services/decision_guard.py)、[`docs/STEPS_20.md`](docs/STEPS_20.md) | 补齐缺件、空包、运输损坏政策；由绑定 Skill 裁剪上下文和工具；生成类型专属补问；Guard Profile 按争议类型执行独立边界 |
 | 21. 通用模拟案件接入 | [`src/dispute_agent/services/intake.py`](src/dispute_agent/services/intake.py)、[`src/dispute_agent/intake_schemas.py`](src/dispute_agent/intake_schemas.py)、[`docs/INTAKE_API.md`](docs/INTAKE_API.md)、[`docs/STEPS_21.md`](docs/STEPS_21.md) | 通过幂等 API 创建交易、导入商品和聊天、提交争议/Claim、上传文字证据，并以版本检查和 Manifest Hash 冻结可重放案件基线 |
 | 22. 异步任务和实时进度 | [`src/dispute_agent/services/workflow_jobs.py`](src/dispute_agent/services/workflow_jobs.py)、[`src/dispute_agent/workflow_queue.py`](src/dispute_agent/workflow_queue.py)、[`src/dispute_agent/worker.py`](src/dispute_agent/worker.py)、[`docs/STEPS_22.md`](docs/STEPS_22.md) | `POST /workflow` 立即返回持久化 Job；Redis/RQ Worker 执行并重试；SSE 展示 Agent 阶段；支持心跳、超时、去重、暂停、取消和重启恢复 |
+| 23. 生产部署基础 | [`compose.yaml`](compose.yaml)、[`deploy/`](deploy/)、[`docs/STEPS_23.md`](docs/STEPS_23.md) | PostgreSQL + Redis/RQ + API/Worker + Caddy 统一编排；自动 Alembic migration、非 root 镜像、readiness、HTTPS、staging 与 SQLite 数据迁移 |
 
-第五至第七步的详细约定见 [`docs/STEPS_5_7.md`](docs/STEPS_5_7.md)，第八至第十步见 [`docs/STEPS_8_10.md`](docs/STEPS_8_10.md)，第十一至第十二步见 [`docs/STEPS_11_12.md`](docs/STEPS_11_12.md)，第十三至第十四步见 [`docs/STEPS_13_14.md`](docs/STEPS_13_14.md)，第十五至第十六步见 [`docs/STEPS_15_16.md`](docs/STEPS_15_16.md)，第十七至第十八步见 [`docs/STEPS_17_18.md`](docs/STEPS_17_18.md)，第十九步见 [`docs/STEPS_19.md`](docs/STEPS_19.md)，第二十步见 [`docs/STEPS_20.md`](docs/STEPS_20.md)，第二十一步见 [`docs/STEPS_21.md`](docs/STEPS_21.md)，第二十二步见 [`docs/STEPS_22.md`](docs/STEPS_22.md)。默认使用无需 API Key 的 `rule-based-baseline-v1`，自有模型接入与故障语义见 [`docs/MODEL_INTEGRATION.md`](docs/MODEL_INTEGRATION.md)。
+第五至第二十二步的逐步文档位于 [`docs/`](docs/)，第二十三步的生产部署、SQLite 数据迁移、域名/HTTPS 和 staging 操作手册见 [`docs/STEPS_23.md`](docs/STEPS_23.md)。默认使用无需 API Key 的 `rule-based-baseline-v1`，自有模型接入与故障语义见 [`docs/MODEL_INTEGRATION.md`](docs/MODEL_INTEGRATION.md)。
 
-## 本地运行
+## 本地 Python 运行
 
 项目要求 Python 3.11 或更高版本。首次启动：
 
@@ -150,6 +151,21 @@ open http://127.0.0.1:8000/workbench
 
 数据库默认写入 `data/dispute_agent.db`，可用 `XIANYU_DATABASE_URL` 覆盖。
 
+## Docker / PostgreSQL 运行
+
+生产形态的本机环境使用 PostgreSQL、Redis、API、Worker 和 Caddy：
+
+```bash
+cp deploy/env/development.env.example deploy/env/development.env
+docker compose \
+  --env-file deploy/env/development.env \
+  -f compose.yaml -f deploy/compose.development.yaml \
+  up -d --build
+docker compose --env-file deploy/env/development.env --profile tools run --rm seed
+```
+
+随后访问 `http://127.0.0.1:18000/workbench`。development 使用 15432/16379/18000/18080/18443，避免和旧本地服务冲突。`GET /health` 是存活检查，`GET /ready` 检查 PostgreSQL、Redis 和环境要求的 Worker，`GET /worker/health` 检查 RQ Worker 注册。staging/production 强制 PostgreSQL、RQ 和 HTTPS；完整部署、现有 SQLite 数据复制、DNS、证书与回滚步骤见 [`docs/STEPS_23.md`](docs/STEPS_23.md)。
+
 ## 快速校验
 
 ```bash
@@ -166,6 +182,7 @@ open http://127.0.0.1:8000/workbench
 .
 ├── config/                  # 可被编排器直接读取的状态机
 ├── alembic/                 # 数据库迁移
+├── deploy/                  # Dockerfile、Caddy、环境模板和 Compose override
 ├── docs/                    # 产品边界与流程说明
 ├── examples/                # 可验证的示例案件
 ├── evaluation/              # 人工标签与评测数据集

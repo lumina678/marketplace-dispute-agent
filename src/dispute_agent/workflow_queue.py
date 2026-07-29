@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Protocol
 
 from redis import Redis
 from redis.exceptions import RedisError
-from rq import Queue, Retry
+from rq import Queue, Retry, Worker
 from rq.job import Job
 from rq.exceptions import NoSuchJobError
 
@@ -21,6 +22,9 @@ class WorkflowQueue(Protocol):
         ...
 
     def health(self) -> dict:
+        ...
+
+    def worker_health(self) -> dict:
         ...
 
 
@@ -94,6 +98,48 @@ class RQWorkflowQueue:
                 "error": str(exc)[:500],
             }
 
+    def worker_health(self) -> dict:
+        try:
+            workers = Worker.all(connection=self.connection, queue=self.queue)
+            active_workers: list[dict] = []
+            for worker in workers:
+                ttl = int(self.connection.ttl(worker.key))
+                last_heartbeat = worker.last_heartbeat
+                heartbeat_age = (
+                    (datetime.now(timezone.utc) - last_heartbeat).total_seconds()
+                    if last_heartbeat is not None
+                    else float("inf")
+                )
+                # RQ refreshes the Redis key expiry as its authoritative liveness
+                # signal. Idle workers may not update the timestamp frequently,
+                # so heartbeat age is diagnostic only and TTL decides health.
+                if ttl <= 0:
+                    continue
+                state = worker.get_state()
+                active_workers.append(
+                    {
+                        "name": worker.name,
+                        "state": getattr(state, "value", state),
+                        "heartbeat_age_seconds": round(heartbeat_age, 3),
+                        "registration_ttl_seconds": ttl,
+                    }
+                )
+            return {
+                "status": "ok" if active_workers else "unavailable",
+                "backend": "rq",
+                "queue": self.settings.workflow_queue_name,
+                "active_worker_count": len(active_workers),
+                "workers": active_workers,
+            }
+        except (RedisError, OSError, ValueError) as exc:
+            return {
+                "status": "unavailable",
+                "backend": "rq",
+                "queue": self.settings.workflow_queue_name,
+                "active_worker_count": 0,
+                "error": type(exc).__name__,
+            }
+
 
 class InlineWorkflowQueue:
     """Explicit test adapter. Never selected by the production default."""
@@ -118,6 +164,14 @@ class InlineWorkflowQueue:
 
     def health(self) -> dict:
         return {"status": "ok", "backend": "inline", "queue": "inline-test-only"}
+
+    def worker_health(self) -> dict:
+        return {
+            "status": "ok",
+            "backend": "inline",
+            "active_worker_count": 1,
+            "workers": [{"name": "inline-test-worker", "state": "idle"}],
+        }
 
 
 def create_workflow_queue(

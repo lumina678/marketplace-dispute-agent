@@ -6,9 +6,9 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from dispute_agent.db import SessionLocal
@@ -31,6 +31,7 @@ from dispute_agent.services.workbench import WorkbenchService
 from dispute_agent.services.claim_router import ClaimRoutingService
 from dispute_agent.services.intake import CaseIntakeService
 from dispute_agent.services.workflow_jobs import TERMINAL_JOB_STATUSES, WorkflowJobExecutor, WorkflowJobService
+from dispute_agent.services.deployment_health import DeploymentHealthService
 from dispute_agent.workflow_queue import WorkflowQueue, create_workflow_queue
 from dispute_agent.intake_schemas import (
     ChatBatchImportRequest,
@@ -46,7 +47,7 @@ from dispute_agent.routing_schemas import (
     RouteClaimRequest,
     RoutingOverrideRequest,
 )
-from dispute_agent.config import PROJECT_ROOT, Settings, get_settings
+from dispute_agent.config import Settings, get_settings
 from dispute_agent.dispute_types import DisputeType, RoutingSource, RoutingStatus
 from dispute_agent.skills import get_skill_registry
 
@@ -212,6 +213,7 @@ def create_app(
     app.state.workflow_jobs = workflow_jobs
     app.state.workflow_executor = workflow_executor
     app.state.workflow_queue = task_queue
+    deployment_health = DeploymentHealthService(session_factory, task_queue, settings)
 
     def get_session() -> Session:
         session = session_factory()
@@ -240,9 +242,19 @@ def create_app(
         return JSONResponse(status_code=status, content={"error": {"code": exc.code, "message": str(exc)}})
 
     @app.get("/health")
-    def health(session: Session = Depends(get_session)) -> dict[str, str]:
-        session.execute(text("SELECT 1"))
+    def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/ready")
+    def ready() -> JSONResponse:
+        is_ready, payload = deployment_health.readiness()
+        return JSONResponse(status_code=200 if is_ready else 503, content=payload)
+
+    @app.get("/worker/health")
+    def worker_health() -> JSONResponse:
+        payload = deployment_health.workers()
+        healthy = payload.get("status") == "ok"
+        return JSONResponse(status_code=200 if healthy else 503, content=payload)
 
     @app.get("/model")
     def model_configuration() -> dict[str, Any]:
@@ -253,8 +265,10 @@ def create_app(
         return backend.health_check(probe=probe)
 
     @app.get("/workflow/health")
-    def workflow_health() -> dict[str, Any]:
-        return task_queue.health()
+    def workflow_health() -> JSONResponse:
+        payload = task_queue.health()
+        healthy = payload.get("status") == "ok"
+        return JSONResponse(status_code=200 if healthy else 503, content=payload)
 
     @app.get("/dispute-types")
     def dispute_types() -> dict[str, Any]:
@@ -435,7 +449,7 @@ def create_app(
 
     @app.get("/workbench", response_class=HTMLResponse)
     def workbench_page() -> str:
-        page = PROJECT_ROOT / "web" / "workbench.html"
+        page = settings.web_directory / "workbench.html"
         return page.read_text(encoding="utf-8")
 
     @app.post("/cases/{case_id}/runs")

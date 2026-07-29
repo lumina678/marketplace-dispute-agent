@@ -1,17 +1,172 @@
+name: ${COMPOSE_PROJECT_NAME:-xianyu}
+
+x-app-environment: &app-environment
+  XIANYU_ENVIRONMENT: ${XIANYU_ENVIRONMENT:-development}
+  XIANYU_RELEASE: ${XIANYU_RELEASE:-dev}
+  XIANYU_PUBLIC_BASE_URL: ${XIANYU_PUBLIC_BASE_URL:-http://localhost}
+  XIANYU_DATABASE_URL: ${XIANYU_DATABASE_URL:-postgresql+psycopg://xianyu:xianyu-local-only@postgres:5432/xianyu}
+  XIANYU_DATABASE_POOL_SIZE: ${XIANYU_DATABASE_POOL_SIZE:-5}
+  XIANYU_DATABASE_MAX_OVERFLOW: ${XIANYU_DATABASE_MAX_OVERFLOW:-10}
+  XIANYU_REDIS_URL: ${XIANYU_REDIS_URL:-redis://redis:6379/0}
+  XIANYU_WORKFLOW_QUEUE_BACKEND: rq
+  XIANYU_WORKFLOW_QUEUE_NAME: ${XIANYU_WORKFLOW_QUEUE_NAME:-xianyu-workflow}
+  XIANYU_READINESS_REQUIRE_WORKER: ${XIANYU_READINESS_REQUIRE_WORKER:-false}
+  XIANYU_MODEL_BACKEND: ${XIANYU_MODEL_BACKEND:-auto}
+  XIANYU_MODEL_BASE_URL: ${XIANYU_MODEL_BASE_URL:-}
+  XIANYU_MODEL_API_KEY: ${XIANYU_MODEL_API_KEY:-}
+  XIANYU_MODEL_NAME: ${XIANYU_MODEL_NAME:-}
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  networks:
+    - backend
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "5"
+
 services:
+  postgres:
+    <<: *service-defaults
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-xianyu}
+      POSTGRES_USER: ${POSTGRES_USER:-xianyu}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-xianyu-local-only}
+    volumes:
+      - xianyu-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
   redis:
+    <<: *service-defaults
     image: redis:7.4-alpine
     command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
-    ports:
-      - "6379:6379"
     volumes:
       - xianyu-redis-data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
-      retries: 10
-    restart: unless-stopped
+      retries: 20
+      start_period: 5s
+
+  migrate:
+    build:
+      context: .
+      dockerfile: deploy/docker/api.Dockerfile
+    environment: *app-environment
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+    networks:
+      - backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: deploy/docker/api.Dockerfile
+    environment: *app-environment
+    expose:
+      - "8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "xianyu-healthcheck", "api"]
+      interval: 10s
+      timeout: 6s
+      retries: 12
+      start_period: 15s
+
+  worker:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: deploy/docker/worker.Dockerfile
+    environment: *app-environment
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "xianyu-healthcheck", "worker"]
+      interval: 15s
+      timeout: 8s
+      retries: 12
+      start_period: 20s
+
+  proxy:
+    <<: *service-defaults
+    image: caddy:2.10-alpine
+    environment:
+      XIANYU_DOMAIN: ${XIANYU_DOMAIN:-localhost}
+    ports:
+      - "${XIANYU_HTTP_PORT:-80}:80"
+      - "${XIANYU_HTTPS_PORT:-443}:443"
+      - "${XIANYU_HTTPS_PORT:-443}:443/udp"
+    volumes:
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - xianyu-caddy-data:/data
+      - xianyu-caddy-config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - edge
+      - backend
+
+  seed:
+    build:
+      context: .
+      dockerfile: deploy/docker/api.Dockerfile
+    environment: *app-environment
+    command: ["xianyu-seed"]
+    restart: "no"
+    profiles: ["tools"]
+    networks:
+      - backend
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  migrate-sqlite:
+    build:
+      context: .
+      dockerfile: deploy/docker/api.Dockerfile
+    environment: *app-environment
+    command:
+      - python
+      - scripts/migrate_sqlite_to_postgres.py
+      - --source
+      - sqlite:////import/dispute_agent.db
+    restart: "no"
+    profiles: ["tools"]
+    volumes:
+      - ./data:/import:ro
+    networks:
+      - backend
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+networks:
+  edge:
+  backend:
 
 volumes:
+  xianyu-postgres-data:
   xianyu-redis-data:
+  xianyu-caddy-data:
+  xianyu-caddy-config:

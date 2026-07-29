@@ -7,6 +7,7 @@ from sqlalchemy import (
     JSON,
     Boolean,
     CheckConstraint,
+    DateTime,
     ForeignKey,
     Float,
     Index,
@@ -27,20 +28,31 @@ def utc_now() -> datetime:
 
 
 class AwareDateTime(TypeDecorator[datetime]):
-    """Store an aware datetime as normalized ISO 8601 text in SQLite."""
+    """Use ISO text in SQLite and native ``TIMESTAMPTZ`` in PostgreSQL."""
 
     impl = Text
     cache_ok = True
 
-    def process_bind_param(self, value: datetime | None, _dialect) -> str | None:  # type: ignore[no-untyped-def]
+    def load_dialect_impl(self, dialect):  # type: ignore[no-untyped-def]
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(DateTime(timezone=True))
+        return dialect.type_descriptor(Text())
+
+    def process_bind_param(self, value: datetime | None, dialect):  # type: ignore[no-untyped-def]
         if value is None:
             return None
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("datetime values must include a timezone")
-        return value.astimezone(timezone.utc).isoformat()
+        normalized = value.astimezone(timezone.utc)
+        return normalized if dialect.name == "postgresql" else normalized.isoformat()
 
-    def process_result_value(self, value: str | None, _dialect) -> datetime | None:  # type: ignore[no-untyped-def]
-        return datetime.fromisoformat(value) if value is not None else None
+    def process_result_value(self, value, _dialect) -> datetime | None:  # type: ignore[no-untyped-def]
+        if value is None:
+            return None
+        parsed = datetime.fromisoformat(value) if isinstance(value, str) else value
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
 
 
 class User(Base):

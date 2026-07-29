@@ -21,10 +21,22 @@ def _ensure_sqlite_parent(database_url: str) -> None:
 
 
 def create_database_engine(database_url: str | None = None) -> Engine:
-    url = database_url or get_settings().database_url
+    settings = get_settings()
+    url = database_url or settings.database_url
     _ensure_sqlite_parent(url)
     connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
-    engine = create_engine(url, connect_args=connect_args, future=True)
+    engine_options: dict = {
+        "connect_args": connect_args,
+        "future": True,
+        "pool_pre_ping": True,
+    }
+    if not url.startswith("sqlite"):
+        engine_options.update(
+            pool_size=settings.database_pool_size,
+            max_overflow=settings.database_max_overflow,
+            pool_recycle=settings.database_pool_recycle_seconds,
+        )
+    engine = create_engine(url, **engine_options)
 
     if url.startswith("sqlite"):
         @event.listens_for(engine, "connect")
