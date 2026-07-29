@@ -84,6 +84,7 @@ class ToolService:
         parameters: dict[str, Any],
         *,
         actor: str,
+        actor_id: str | None = None,
         case_run_id: str | None = None,
     ) -> Any:
         if tool_name not in self._handlers:
@@ -115,6 +116,7 @@ class ToolService:
                     case_run_id=case_run_id,
                     tool_name=tool_name,
                     actor=actor,
+                    actor_id=actor_id,
                     parameters_json=summarize(parameters),
                     result_summary_json=summarize(result),
                     status="SUCCEEDED",
@@ -133,6 +135,7 @@ class ToolService:
                         case_run_id=case_run_id if case_run_id and session.get(CaseRun, case_run_id) else None,
                         tool_name=tool_name,
                         actor=actor,
+                        actor_id=actor_id,
                         parameters_json=summarize(parameters),
                         result_summary_json=None,
                         status="FAILED",
@@ -276,6 +279,7 @@ class ToolService:
                 {
                     "evidence_id": item.id,
                     "submitted_by": item.submitted_by,
+                    "recorded_by_id": item.recorded_by_id,
                     "evidence_type": item.evidence_type,
                     "description": item.description,
                     "submitted_at": item.submitted_at,
@@ -297,6 +301,7 @@ class ToolService:
             "case_id": item.dispute_id,
             "evidence_id": item.id,
             "submitted_by": item.submitted_by,
+            "recorded_by_id": item.recorded_by_id,
             "evidence_type": item.evidence_type,
             "description": item.description,
             "text_content": item.content_text,

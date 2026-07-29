@@ -31,6 +31,7 @@ def context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestContext:
     # private model in the project-level .env for interactive workbench use.
     monkeypatch.setenv("XIANYU_MODEL_BACKEND", "rule_based")
     monkeypatch.setenv("XIANYU_WORKFLOW_QUEUE_BACKEND", "inline")
+    monkeypatch.setenv("XIANYU_AUTH_ENABLED", "false")
     get_settings.cache_clear()
     database_url = f"sqlite:///{tmp_path / 'test.db'}"
     engine = create_database_engine(database_url)
@@ -39,6 +40,7 @@ def context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestContext:
     with sessions() as session:
         seed_database(session, PROJECT_ROOT / "policies")
     settings = Settings(
+        auth_enabled=False,
         database_url=database_url,
         policy_directory=PROJECT_ROOT / "policies",
         state_machine_path=PROJECT_ROOT / "config" / "case_state_machine.json",

@@ -2,7 +2,7 @@
 
 本项目是一个面向二手交易争议的多 Agent 调查与裁决辅助系统，通过双方观点分离、证据链构建、版本化规则检索、人工审批和幂等执行，处理普通客服流程无法解决的复杂案件。
 
-> 当前仓库完成了实施计划的前二十三步：在完整案件闭环、多 Agent 调查、确定性 Router/Skill/Guard、通用模拟案件接入和异步 Workflow 基础上，补齐 PostgreSQL、Redis/RQ、非 root API/Worker 容器、自动迁移、健康检查、Caddy HTTPS 与 staging 部署基础。系统不替代法院、仲裁机构或平台人工裁决员。
+> 当前仓库完成了实施计划的前二十四步：在完整案件闭环、多 Agent 调查、确定性 Router/Skill/Guard、通用模拟案件接入、异步 Workflow 和生产部署基础上，补齐审核员端服务端 Session、CSRF、可信身份审计和登录工作台。系统不替代法院、仲裁机构或平台人工裁决员。
 
 ## 当前 MVP
 
@@ -38,8 +38,12 @@
 | 21. 通用模拟案件接入 | [`src/dispute_agent/services/intake.py`](src/dispute_agent/services/intake.py)、[`src/dispute_agent/intake_schemas.py`](src/dispute_agent/intake_schemas.py)、[`docs/INTAKE_API.md`](docs/INTAKE_API.md)、[`docs/STEPS_21.md`](docs/STEPS_21.md) | 通过幂等 API 创建交易、导入商品和聊天、提交争议/Claim、上传文字证据，并以版本检查和 Manifest Hash 冻结可重放案件基线 |
 | 22. 异步任务和实时进度 | [`src/dispute_agent/services/workflow_jobs.py`](src/dispute_agent/services/workflow_jobs.py)、[`src/dispute_agent/workflow_queue.py`](src/dispute_agent/workflow_queue.py)、[`src/dispute_agent/worker.py`](src/dispute_agent/worker.py)、[`docs/STEPS_22.md`](docs/STEPS_22.md) | `POST /workflow` 立即返回持久化 Job；Redis/RQ Worker 执行并重试；SSE 展示 Agent 阶段；支持心跳、超时、去重、暂停、取消和重启恢复 |
 | 23. 生产部署基础 | [`compose.yaml`](compose.yaml)、[`deploy/`](deploy/)、[`docs/STEPS_23.md`](docs/STEPS_23.md) | PostgreSQL + Redis/RQ + API/Worker + Caddy 统一编排；自动 Alembic migration、非 root 镜像、readiness、HTTPS、staging 与 SQLite 数据迁移 |
+| 24. 审核员身份与权限 | [`src/dispute_agent/auth.py`](src/dispute_agent/auth.py)、[`web/login.html`](web/login.html)、[`docs/STEPS_24.md`](docs/STEPS_24.md) | 仅开放 REVIEWER 登录；Redis 服务端 Session、HttpOnly/SameSite Cookie、CSRF、账号 CLI、真实操作者审计和受保护 API/SSE |
 
 第五至第二十二步的逐步文档位于 [`docs/`](docs/)，第二十三步的生产部署、SQLite 数据迁移、域名/HTTPS 和 staging 操作手册见 [`docs/STEPS_23.md`](docs/STEPS_23.md)。默认使用无需 API Key 的 `rule-based-baseline-v1`，自有模型接入与故障语义见 [`docs/MODEL_INTEGRATION.md`](docs/MODEL_INTEGRATION.md)。
+
+第二十四步暂时只实现审核员内部端：买家和卖家仍是案件数据中的业务主体，不拥有登录入口。认证方式、账号创建、Cookie、CSRF、伪造身份测试和生产部署切换见 [`docs/STEPS_24.md`](docs/STEPS_24.md)。
+本次面向使用者的变更记录在 [`CHANGELOG.md`](CHANGELOG.md) 的 `Unreleased`；正式发布时再统一确定版本号和 Git tag。
 
 ## 本地 Python 运行
 
@@ -50,6 +54,7 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -e '.[dev]'
 .venv/bin/alembic upgrade head
 .venv/bin/xianyu-seed
+.venv/bin/xianyu-create-reviewer --user-id user_reviewer_demo --username reviewer.demo
 ```
 
 启动 Redis（需要 Docker Desktop 已运行）：
@@ -66,6 +71,20 @@ docker compose up -d redis
 ```
 
 API 文档位于 `http://127.0.0.1:8000/docs`。
+
+默认开启审核员登录。首次创建账号时使用 CLI 交互输入至少 12 位密码；也可以使用环境变量 `XIANYU_REVIEWER_PASSWORD` 或管道输入，避免把密码写入 Git。打开 `http://127.0.0.1:8000/workbench` 会先进入 `/login`，登录后 Cookie 自动携带到案件 API 和 SSE。开发环境的 `XIANYU_AUTH_COOKIE_SECURE=false` 只适用于 HTTP；staging/production 必须使用 HTTPS 和 Secure Cookie。
+
+命令行调试受保护 API 时，先建立 Cookie Jar 并取得 CSRF。下面的 `<password>` 仅是占位符，不要把真实密码提交到仓库或共享 Shell 历史：
+
+```bash
+BASE=http://127.0.0.1:8000
+COOKIE=/tmp/xianyu-reviewer.cookies
+curl -sS -c "$COOKIE" -X POST "$BASE/auth/login" \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"reviewer.demo","password":"<password>"}'
+curl -sS -b "$COOKIE" "$BASE/auth/me" > /tmp/xianyu-reviewer-me.json
+CSRF=$(.venv/bin/python -c 'import json; print(json.load(open("/tmp/xianyu-reviewer-me.json"))["csrf_token"])')
+```
 
 除种子案件外，现在也可以完全通过 API 创建新案件：创建交易、导入商品和聊天、提交 Claim、上传文字证据、冻结材料后启动 Workflow。完整请求示例和幂等/错误语义见 [`docs/INTAKE_API.md`](docs/INTAKE_API.md)。
 
@@ -91,8 +110,8 @@ cp .env.example .env
 检查当前配置和连接状态：
 
 ```bash
-curl http://127.0.0.1:8000/model
-curl 'http://127.0.0.1:8000/model/health?probe=true'
+curl -b "$COOKIE" "$BASE/model"
+curl -b "$COOKIE" "$BASE/model/health?probe=true"
 ```
 
 模型传输失败或 Schema 修复耗尽时，HTTP 请求仍已用 `202` 接受；后台 Job 按配置重试，最终把 `MODEL_BACKEND_ERROR` 持久化到 Job，不会静默回退到规则基线。工作台会展示当前 Backend、实时阶段、重试状态，以及每个 Agent 的模型名、Token usage 和完整结构化输出。完整兼容格式、可选配置和非 OpenAI-compatible 适配示例见 [`docs/MODEL_INTEGRATION.md`](docs/MODEL_INTEGRATION.md)。
@@ -102,37 +121,38 @@ curl 'http://127.0.0.1:8000/model/health?probe=true'
 让调查自动推进到“等待补证”或 `HUMAN_REVIEW`：
 
 ```bash
-curl -X POST http://127.0.0.1:8000/cases/case_clear_mismatch/workflow
+curl -b "$COOKIE" -X POST "$BASE/cases/case_clear_mismatch/workflow" \
+  -H "X-CSRF-Token: $CSRF"
 # 从响应取得 job_id 后查询状态或订阅 SSE：
-curl http://127.0.0.1:8000/workflow-jobs/<job_id>
-curl -N http://127.0.0.1:8000/workflow-jobs/<job_id>/events
+curl -b "$COOKIE" "$BASE/workflow-jobs/<job_id>"
+curl -b "$COOKIE" -N "$BASE/workflow-jobs/<job_id>/events"
 ```
 
 读取冻结审核包并批准固定决定版本：
 
 ```bash
-curl http://127.0.0.1:8000/cases/case_clear_mismatch/review-package
-curl -X POST http://127.0.0.1:8000/cases/case_clear_mismatch/reviews/approve \
-  -H 'Content-Type: application/json' \
-  -d '{"decision_id":"<decision_id>","reviewer_id":"user_reviewer_demo","reason":"已复核证据、规则和金额"}'
+curl -b "$COOKIE" "$BASE/cases/case_clear_mismatch/review-package"
+curl -b "$COOKIE" -X POST "$BASE/cases/case_clear_mismatch/reviews/approve" \
+  -H "X-CSRF-Token: $CSRF" -H 'Content-Type: application/json' \
+  -d '{"decision_id":"<decision_id>","reason":"已复核证据、规则和金额"}'
 ```
 
 执行批准后的模拟处置并读取结果：
 
 ```bash
-curl -X POST http://127.0.0.1:8000/cases/case_clear_mismatch/execution \
-  -H 'Content-Type: application/json' \
+curl -b "$COOKIE" -X POST "$BASE/cases/case_clear_mismatch/execution" \
+  -H "X-CSRF-Token: $CSRF" -H 'Content-Type: application/json' \
   -d '{"decision_id":"<decision_id>"}'
-curl http://127.0.0.1:8000/cases/case_clear_mismatch/execution
+curl -b "$COOKIE" "$BASE/cases/case_clear_mismatch/execution"
 ```
 
 在申诉窗口内提交新证据并由审核员决定是否重开：
 
 ```bash
-curl -X POST http://127.0.0.1:8000/cases/case_clear_mismatch/appeals \
-  -H 'Content-Type: application/json' \
+curl -b "$COOKIE" -X POST "$BASE/cases/case_clear_mismatch/appeals" \
+  -H "X-CSRF-Token: $CSRF" -H 'Content-Type: application/json' \
   -d '{"appellant_id":"user_buyer_demo","appellant_role":"BUYER","grounds":"NEW_EVIDENCE","statement":"提交第三方原始检测报告","new_evidence":[{"evidence_type":"DEVICE_REPORT","description":"第三方原始检测报告显示 8GB 和涉案序列号","source_record_id":"appeal-report-001","captured_at":"2026-07-23T10:00:00+08:00","related_claim_ids":["claim_clear_mismatch_buyer"],"extracted_facts":[{"field":"detected_memory_gb","value":8},{"field":"detected_serial","value":"SN-CLEAR-001"}]}]}'
-curl http://127.0.0.1:8000/cases/case_clear_mismatch/appeals
+curl -b "$COOKIE" "$BASE/cases/case_clear_mismatch/appeals"
 ```
 
 运行评测并打开案件工作台：
@@ -162,6 +182,10 @@ docker compose \
   -f compose.yaml -f deploy/compose.development.yaml \
   up -d --build
 docker compose --env-file deploy/env/development.env --profile tools run --rm seed
+docker compose --env-file deploy/env/development.env --profile tools run --rm \
+  -e XIANYU_REVIEWER_USER_ID=user_reviewer_demo \
+  -e XIANYU_REVIEWER_USERNAME=reviewer.demo \
+  create-reviewer
 ```
 
 随后访问 `http://127.0.0.1:18000/workbench`。development 使用 15432/16379/18000/18080/18443，避免和旧本地服务冲突。`GET /health` 是存活检查，`GET /ready` 检查 PostgreSQL、Redis 和环境要求的 Worker，`GET /worker/health` 检查 RQ Worker 注册。staging/production 强制 PostgreSQL、RQ 和 HTTPS；完整部署、现有 SQLite 数据复制、DNS、证书与回滚步骤见 [`docs/STEPS_23.md`](docs/STEPS_23.md)。
@@ -180,6 +204,7 @@ docker compose --env-file deploy/env/development.env --profile tools run --rm se
 
 ```text
 .
+├── CHANGELOG.md             # 面向使用者的未发布与版本变更
 ├── config/                  # 可被编排器直接读取的状态机
 ├── alembic/                 # 数据库迁移
 ├── deploy/                  # Dockerfile、Caddy、环境模板和 Compose override

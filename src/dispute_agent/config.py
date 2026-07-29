@@ -60,6 +60,13 @@ class Settings(BaseSettings):
     workflow_sse_poll_interval_seconds: float = Field(default=0.5, ge=0.1, le=10.0)
     readiness_require_worker: bool | None = None
     worker_ttl_seconds: int = Field(default=420, ge=60, le=3600)
+    # Reviewer workbench authentication. The browser receives only an opaque
+    # session id; reviewer identity and CSRF state live in Redis.
+    auth_enabled: bool = True
+    auth_session_cookie_name: str = "xianyu_reviewer_session"
+    auth_session_ttl_seconds: int = Field(default=28_800, ge=300, le=604_800)
+    auth_session_redis_prefix: str = "xianyu:auth:session:"
+    auth_cookie_secure: bool | None = None
 
     def workflow_retry_delays(self) -> list[int]:
         values = [item.strip() for item in self.workflow_retry_delays_seconds.split(",") if item.strip()]
@@ -73,6 +80,11 @@ class Settings(BaseSettings):
             return self.readiness_require_worker
         return self.environment in {"staging", "production"}
 
+    def should_use_secure_auth_cookie(self) -> bool:
+        if self.auth_cookie_secure is not None:
+            return self.auth_cookie_secure
+        return self.environment in {"staging", "production"}
+
     @model_validator(mode="after")
     def validate_deployment_profile(self) -> "Settings":
         if self.environment not in {"staging", "production"}:
@@ -83,6 +95,10 @@ class Settings(BaseSettings):
             raise ValueError(f"{self.environment} must use the RQ workflow queue")
         if not self.public_base_url or urlparse(self.public_base_url).scheme != "https":
             raise ValueError(f"{self.environment} must define an HTTPS XIANYU_PUBLIC_BASE_URL")
+        if not self.auth_enabled:
+            raise ValueError(f"{self.environment} must enable reviewer authentication")
+        if not self.should_use_secure_auth_cookie():
+            raise ValueError(f"{self.environment} must use Secure reviewer session cookies")
         return self
 
 

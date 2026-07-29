@@ -53,6 +53,7 @@ class AppealService:
         evidence_ids: list[str] | None = None,
         new_evidence: list[dict[str, Any]] | None = None,
         now: datetime | None = None,
+        recorded_by_id: str | None = None,
     ) -> dict[str, Any]:
         appellant_role = appellant_role.upper()
         grounds = grounds.upper()
@@ -67,6 +68,11 @@ class AppealService:
             raise ValidationError("now 必须包含时区")
 
         with self.session_factory() as session:
+            recorder = (
+                self._require_reviewer(session, recorded_by_id, allow_admin=True)
+                if recorded_by_id
+                else None
+            )
             dispute = session.get(Dispute, case_id)
             if dispute is None:
                 raise NotFoundError(f"案件不存在: {case_id}")
@@ -112,6 +118,7 @@ class AppealService:
                     appellant_role=appellant_role,
                     items=new_evidence or [],
                     submitted_at=now,
+                    recorded_by_id=recorder.id if recorder else None,
                 )
             )
             known_evidence_ids = set(session.scalars(select(Evidence.id).where(Evidence.dispute_id == case_id)))
@@ -126,6 +133,7 @@ class AppealService:
                 decision_id=decision.id,
                 appellant_id=appellant_id,
                 appellant_role=appellant_role,
+                recorded_by_id=recorder.id if recorder else None,
                 grounds=grounds,
                 statement=statement.strip(),
                 evidence_ids_json=sorted(selected_evidence_ids),
@@ -151,6 +159,7 @@ class AppealService:
                     "appeal_within_deadline": True,
                     "deadline": deadline.isoformat(),
                     "grounds": grounds,
+                    "recorded_by_id": recorder.id if recorder else None,
                 },
             )
             session.refresh(dispute)
@@ -375,6 +384,7 @@ class AppealService:
         appellant_role: str,
         items: list[dict[str, Any]],
         submitted_at: datetime,
+        recorded_by_id: str | None,
     ) -> list[str]:
         if not items:
             return []
@@ -410,6 +420,7 @@ class AppealService:
                     id=new_id("evidence"),
                     dispute_id=dispute.id,
                     submitted_by=appellant_role,
+                    recorded_by_id=recorded_by_id,
                     evidence_type=str(item["evidence_type"]).upper(),
                     description=str(item["description"]),
                     source_system=str(item.get("source_system", "APPEAL_EVIDENCE_STORE")),
@@ -515,6 +526,7 @@ class AppealService:
                 "decision_id": appeal.decision_id,
                 "appellant_id": appeal.appellant_id,
                 "appellant_role": appeal.appellant_role,
+                "recorded_by_id": appeal.recorded_by_id,
                 "grounds": appeal.grounds,
                 "statement": appeal.statement,
                 "evidence_ids": appeal.evidence_ids_json,

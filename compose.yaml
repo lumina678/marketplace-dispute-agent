@@ -8,6 +8,10 @@ x-app-environment: &app-environment
   XIANYU_DATABASE_POOL_SIZE: ${XIANYU_DATABASE_POOL_SIZE:-5}
   XIANYU_DATABASE_MAX_OVERFLOW: ${XIANYU_DATABASE_MAX_OVERFLOW:-10}
   XIANYU_REDIS_URL: ${XIANYU_REDIS_URL:-redis://redis:6379/0}
+  XIANYU_AUTH_ENABLED: ${XIANYU_AUTH_ENABLED:-true}
+  XIANYU_AUTH_SESSION_TTL_SECONDS: ${XIANYU_AUTH_SESSION_TTL_SECONDS:-28800}
+  XIANYU_AUTH_SESSION_REDIS_PREFIX: ${XIANYU_AUTH_SESSION_REDIS_PREFIX:-xianyu:auth:session:}
+  XIANYU_AUTH_COOKIE_SECURE: ${XIANYU_AUTH_COOKIE_SECURE:-false}
   XIANYU_WORKFLOW_QUEUE_BACKEND: rq
   XIANYU_WORKFLOW_QUEUE_NAME: ${XIANYU_WORKFLOW_QUEUE_NAME:-xianyu-workflow}
   XIANYU_READINESS_REQUIRE_WORKER: ${XIANYU_READINESS_REQUIRE_WORKER:-false}
@@ -135,6 +139,22 @@ services:
     command: ["xianyu-seed"]
     restart: "no"
     profiles: ["tools"]
+    networks:
+      - backend
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  create-reviewer:
+    build:
+      context: .
+      dockerfile: deploy/docker/api.Dockerfile
+    environment: *app-environment
+    command: ["xianyu-create-reviewer"]
+    restart: "no"
+    profiles: ["tools"]
+    stdin_open: true
+    tty: true
     networks:
       - backend
     depends_on:

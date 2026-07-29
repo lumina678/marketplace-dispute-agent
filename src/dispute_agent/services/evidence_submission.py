@@ -43,6 +43,7 @@ class EvidenceSubmissionService:
         source_system: str = "EVIDENCE_STORE",
         handling_flags: list[str] | None = None,
         actor_id: str = "orchestrator",
+        recorded_by_id: str | None = None,
     ) -> dict[str, Any]:
         target = target.upper()
         if target not in {"BUYER", "SELLER"}:
@@ -120,6 +121,7 @@ class EvidenceSubmissionService:
                     id=new_id("evidence"),
                     dispute_id=case_id,
                     submitted_by=target,
+                    recorded_by_id=recorded_by_id,
                     evidence_type=evidence_type.upper(),
                     description=description,
                     source_system=source_system,
@@ -140,6 +142,7 @@ class EvidenceSubmissionService:
                     "evidence_id": evidence.id,
                     "case_id": case_id,
                     "submitted_by": evidence.submitted_by,
+                    "recorded_by_id": evidence.recorded_by_id,
                     "evidence_type": evidence.evidence_type,
                     "content_sha256": evidence.content_sha256,
                     "immutable_uri": evidence.immutable_uri,

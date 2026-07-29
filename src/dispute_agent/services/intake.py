@@ -55,7 +55,7 @@ class CaseIntakeService:
 
     def create_transaction(self, request: TransactionCreateRequest) -> dict[str, Any]:
         with self.session_factory() as session:
-            self._require_actor(session, request.actor_id, {"ADMIN"})
+            self._require_actor(session, request.actor_id, {"ADMIN", "REVIEWER"})
             buyer = session.get(User, request.buyer_id)
             seller = session.get(User, request.seller_id)
             if buyer is None or buyer.role != "BUYER":
@@ -94,7 +94,7 @@ class CaseIntakeService:
         request: ListingSnapshotImportRequest,
     ) -> dict[str, Any]:
         with self.session_factory() as session:
-            self._require_actor(session, request.actor_id, {"ADMIN"})
+            self._require_actor(session, request.actor_id, {"ADMIN", "REVIEWER"})
             transaction = self._require_transaction(session, transaction_id)
             digest = content_hash(request.payload)
             self._verify_digest(request.content_sha256, digest, "商品快照")
@@ -137,7 +137,7 @@ class CaseIntakeService:
         request: ChatBatchImportRequest,
     ) -> dict[str, Any]:
         with self.session_factory() as session:
-            self._require_actor(session, request.actor_id, {"ADMIN"})
+            self._require_actor(session, request.actor_id, {"ADMIN", "REVIEWER"})
             transaction = self._require_transaction(session, transaction_id)
             prepared: list[tuple[Any, str, str]] = []
             created_ids: list[str] = []
@@ -196,9 +196,19 @@ class CaseIntakeService:
                 "snapshot_locked": False,
             }
 
-    def submit_dispute(self, request: DisputeSubmitRequest) -> dict[str, Any]:
+    def submit_dispute(
+        self,
+        request: DisputeSubmitRequest,
+        *,
+        recorded_by_id: str | None = None,
+    ) -> dict[str, Any]:
         with self.session_factory() as session:
             transaction = self._require_transaction(session, request.transaction_id)
+            recorder = (
+                self._require_actor(session, recorded_by_id, {"REVIEWER", "ADMIN"})
+                if recorded_by_id
+                else None
+            )
             actor = self._require_actor(session, request.submitted_by_id, {"BUYER", "SELLER", "ADMIN"})
             if actor.role != "ADMIN":
                 participant_id = transaction.buyer_id if actor.role == "BUYER" else transaction.seller_id
@@ -237,6 +247,7 @@ class CaseIntakeService:
                 dispute = Dispute(
                     id=request.case_id,
                     transaction_id=request.transaction_id,
+                    recorded_by_id=recorder.id if recorder else None,
                     dispute_type=request.dispute_type.value,
                     state="SUBMITTED",
                     state_version=1,
@@ -289,7 +300,7 @@ class CaseIntakeService:
             routing = self.routing_service.route_case(
                 request.case_id,
                 hints=hints,
-                actor_id=request.submitted_by_id,
+                actor_id=recorded_by_id or request.submitted_by_id,
                 force_recompute=False,
             )
         else:
@@ -305,16 +316,27 @@ class CaseIntakeService:
         self,
         case_id: str,
         request: TextEvidenceUploadRequest,
+        *,
+        recorded_by_id: str | None = None,
     ) -> dict[str, Any]:
         with self.session_factory() as session:
             dispute = self._require_dispute(session, case_id)
             transaction = dispute.transaction
+            recorder = (
+                self._require_actor(session, recorded_by_id, {"REVIEWER", "ADMIN"})
+                if recorded_by_id
+                else None
+            )
             actor = self._require_actor(session, request.submitter_id, {"BUYER", "SELLER", "REVIEWER", "ADMIN"})
-            if actor.role in {"BUYER", "SELLER"}:
-                participant_id = transaction.buyer_id if actor.role == "BUYER" else transaction.seller_id
-                if actor.id != participant_id or request.submitted_by != actor.role:
-                    raise AuthorizationError("交易参与方只能以本方身份提交证据")
-            elif actor.role == "REVIEWER" and request.submitted_by != "REVIEWER":
+            if request.submitted_by in {"BUYER", "SELLER"}:
+                participant_id = (
+                    transaction.buyer_id if request.submitted_by == "BUYER" else transaction.seller_id
+                )
+                if actor.id != participant_id or actor.role != request.submitted_by:
+                    raise AuthorizationError("买卖双方证据必须绑定真实交易参与方")
+            elif actor.role in {"BUYER", "SELLER"}:
+                raise AuthorizationError("交易参与方只能以本方身份提交证据")
+            elif actor.role == "REVIEWER" and request.submitted_by != "REVIEWER" and recorder is None:
                 raise AuthorizationError("REVIEWER 只能以 REVIEWER 身份提交证据")
             elif actor.role == "ADMIN" and request.submitted_by not in {"SYSTEM", "THIRD_PARTY", "REVIEWER"}:
                 raise AuthorizationError("ADMIN 只能导入 SYSTEM、THIRD_PARTY 或 REVIEWER 证据")
@@ -357,6 +379,7 @@ class CaseIntakeService:
                 id=request.evidence_id,
                 dispute_id=case_id,
                 submitted_by=request.submitted_by,
+                recorded_by_id=recorder.id if recorder else None,
                 evidence_type=request.evidence_type,
                 description=request.description,
                 content_text=request.text_content,
@@ -881,6 +904,7 @@ class CaseIntakeService:
             "evidence_id": item.id,
             "case_id": item.dispute_id,
             "submitted_by": item.submitted_by,
+            "recorded_by_id": item.recorded_by_id,
             "evidence_type": item.evidence_type,
             "description": item.description,
             "text_content": item.content_text,

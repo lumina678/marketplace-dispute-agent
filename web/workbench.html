@@ -87,6 +87,8 @@
     .avatar-mini { width:31px; height:31px; display:grid; place-items:center; border-radius:50%; color:#171716; background:#f7f3df; font-weight:800; }
     .profile strong { display:block; color:#eee; font-size:12px; }
     .profile small { display:block; color:#74736d; font-size:10px; }
+    .logout-button { margin-top:5px; padding:0; border:0; color:#aaa9a3; background:transparent; cursor:pointer; font-size:10px; }
+    .logout-button:hover { color:var(--yellow); }
 
     .workspace { min-width:0; padding:0 18px 18px; }
     .topbar {
@@ -368,7 +370,7 @@
       <div class="case-list" id="caseList"><div class="empty">读取中…</div></div>
       <div class="profile">
         <div class="avatar-mini">审</div>
-        <div><strong>平台审核员</strong><small>本地演示账户</small></div>
+        <div><strong id="reviewerName">读取身份…</strong><small id="reviewerAccount">REVIEWER</small><button class="logout-button" id="logoutButton" type="button">退出登录</button></div>
       </div>
     </aside>
 
@@ -435,6 +437,7 @@
     let workflowEventSource = null;
     let currentWorkflowJob = null;
     let workflowStartedAt = null;
+    let authState = null;
 
     function showToast(message, error=false) {
       const toast = document.getElementById('toast');
@@ -445,7 +448,18 @@
     }
 
     async function api(url, options={}) {
-      const response = await fetch(url, options);
+      const method = String(options.method || 'GET').toUpperCase();
+      const headers = new Headers(options.headers || {});
+      if (!['GET','HEAD','OPTIONS'].includes(method) && authState?.csrf_token) {
+        headers.set('X-CSRF-Token', authState.csrf_token);
+      }
+      const response = await fetch(url, {...options, method, headers, credentials:'same-origin'});
+      if (response.status === 401) {
+        closeWorkflowEvents();
+        const next = `${location.pathname}${location.search}`;
+        location.replace(`/login?next=${encodeURIComponent(next)}`);
+        throw new Error('登录已失效，正在跳转。');
+      }
       if (!response.ok) {
         let message = `${response.status} ${response.statusText}`;
         try {
@@ -796,7 +810,7 @@
         const endpoint = action === 'approve' ? 'approve' : 'reject';
         await api(`/cases/${encodeURIComponent(currentCaseId)}/reviews/${endpoint}`, {
           method:'POST', headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({decision_id:decisionId, reviewer_id:'user_reviewer_demo', reason})
+          body:JSON.stringify({decision_id:decisionId, reason})
         });
         document.getElementById('reviewDialog').close();
         showToast(action === 'approve' ? '处置建议已批准。' : '处置建议已拒绝。');
@@ -837,13 +851,13 @@
         } else if (state === 'APPROVED') {
           await api(`/cases/${encodeURIComponent(currentCaseId)}/execution`, {
             method:'POST', headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({decision_id:currentData.recommendation.decision_id, actor_id:'workbench-reviewer'})
+            body:JSON.stringify({decision_id:currentData.recommendation.decision_id})
           });
           showToast('模拟处置已执行并完成状态回读。');
         } else if (state === 'EXECUTION_FAILED') {
           await api(`/cases/${encodeURIComponent(currentCaseId)}/execution/retry`, {
             method:'POST', headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({decision_id:currentData.recommendation.decision_id, actor_id:'workbench-reviewer'})
+            body:JSON.stringify({decision_id:currentData.recommendation.decision_id})
           });
           showToast('已重试模拟处置。');
         } else {
@@ -923,7 +937,7 @@
       try {
         const updated = await api(`/workflow-jobs/${encodeURIComponent(job.job_id)}/${action}`, {
           method:'POST', headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({actor_id:'workbench-reviewer', reason:reasons[action]})
+          body:JSON.stringify({reason:reasons[action]})
         });
         currentWorkflowJob = updated;
         currentData.workflow_job = updated;
@@ -971,6 +985,21 @@
       }
     }
 
+    async function loadAuth() {
+      authState = await api('/auth/me');
+      document.getElementById('reviewerName').textContent = authState.reviewer.display_name;
+      document.getElementById('reviewerAccount').textContent = `${authState.reviewer.username} · ${authState.reviewer.role}`;
+    }
+
+    async function logout() {
+      try {
+        await api('/auth/logout', {method:'POST'});
+      } finally {
+        closeWorkflowEvents();
+        location.replace('/login');
+      }
+    }
+
     function friendlyCaseName(caseId) {
       const names = {
         case_clear_mismatch:'明确描述不符', case_serial_conflict:'序列号冲突', case_missing_buyer_proof:'买方证据不足',
@@ -1014,6 +1043,7 @@
     }
 
     document.getElementById('refreshButton').addEventListener('click', () => loadCase(currentCaseId));
+    document.getElementById('logoutButton').addEventListener('click', logout);
     document.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', () => document.getElementById(button.dataset.close).close()));
     document.querySelectorAll('[data-review]').forEach(button => button.addEventListener('click', () => submitReview(button.dataset.review)));
     document.querySelectorAll('[data-demo]').forEach(button => button.addEventListener('click', () => showToast(`${button.dataset.demo}将在后续页面中展开，本次先聚焦案件调解工作台。`)));
@@ -1021,7 +1051,10 @@
       if (event.target === dialog) dialog.close();
     }));
 
-    Promise.all([loadModel(), loadCases()]).finally(() => loadCase(currentCaseId));
+    loadAuth()
+      .then(() => Promise.all([loadModel(), loadCases()]))
+      .then(() => loadCase(currentCaseId))
+      .catch(error => showToast(error.message, true));
   </script>
 </body>
 </html>

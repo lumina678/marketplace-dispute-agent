@@ -111,20 +111,21 @@ docker compose up -d redis
 .venv/bin/xianyu-worker
 ```
 
-先确认实际加载的 Backend：
+第二十四步默认开启审核员认证。先按 `README.md` 登录并设置 `BASE`、`COOKIE`、`CSRF`，再确认实际加载的 Backend：
 
 ```bash
-curl http://127.0.0.1:8000/model
-curl 'http://127.0.0.1:8000/model/health?probe=true'
+curl -b "$COOKIE" "$BASE/model"
+curl -b "$COOKIE" "$BASE/model/health?probe=true"
 ```
 
 再运行一个完整案件：
 
 ```bash
-curl -X POST http://127.0.0.1:8000/cases/case_clear_mismatch/workflow
-curl http://127.0.0.1:8000/workflow-jobs/<job_id>
-curl -N http://127.0.0.1:8000/workflow-jobs/<job_id>/events
-curl http://127.0.0.1:8000/cases/case_clear_mismatch/agent-outputs
+curl -b "$COOKIE" -X POST "$BASE/cases/case_clear_mismatch/workflow" \
+  -H "X-CSRF-Token: $CSRF"
+curl -b "$COOKIE" "$BASE/workflow-jobs/<job_id>"
+curl -b "$COOKIE" -N "$BASE/workflow-jobs/<job_id>/events"
+curl -b "$COOKIE" "$BASE/cases/case_clear_mismatch/agent-outputs"
 ```
 
 打开 `http://127.0.0.1:8000/workbench`，可以查看当前 Backend，以及每个 Agent 的模型名、Token usage、内容哈希和完整结构化输出。

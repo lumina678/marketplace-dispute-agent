@@ -54,7 +54,7 @@ class RouteCaseRequest(RoutingModel):
 
 
 class RoutingOverrideRequest(RoutingModel):
-    reviewer_id: str = Field(min_length=1, max_length=80)
+    reviewer_id: str = Field(default="authenticated-reviewer", min_length=1, max_length=80)
     issue_type: DisputeType
     claim_type: str | None = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]+$")
     reason: str = Field(min_length=1, max_length=2000)

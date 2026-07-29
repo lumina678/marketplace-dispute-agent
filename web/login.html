@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>审核员登录 · 闲置法庭</title>
+  <style>
+    :root { color-scheme:light; --ink:#181816; --muted:#77756e; --yellow:#ffd52f; --line:#dedbd2; }
+    * { box-sizing:border-box; }
+    body {
+      margin:0; min-height:100vh; display:grid; place-items:center; padding:24px;
+      color:var(--ink); font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+      background:radial-gradient(circle at 1px 1px,rgba(36,33,24,.055) 1px,transparent 1.2px) 0 0/18px 18px,
+        linear-gradient(145deg,#f8f6ef,#f2efe5 65%,#e6f1ed);
+    }
+    .shell { width:min(920px,100%); min-height:560px; display:grid; grid-template-columns:1.05fr .95fr; overflow:hidden; border-radius:30px; background:#fffefa; box-shadow:0 28px 80px rgba(31,28,19,.14); }
+    .intro { position:relative; padding:50px; color:#f4f1e6; background:#191917; }
+    .brand { display:flex; align-items:center; gap:13px; }
+    .mark { width:54px; height:54px; display:grid; place-items:center; border-radius:17px; color:#171716; background:var(--yellow); font-size:32px; font-weight:800; }
+    .brand strong { display:block; color:#fff; font-size:18px; }
+    .brand small { color:var(--yellow); font-size:10px; font-weight:800; letter-spacing:.14em; }
+    .intro h1 { margin:92px 0 14px; max-width:420px; font-size:38px; line-height:1.15; letter-spacing:-.04em; }
+    .intro p { max-width:410px; color:#aaa89f; }
+    .boundary { position:absolute; right:45px; bottom:42px; left:50px; padding-top:18px; border-top:1px solid #343431; color:#77766f; font-size:11px; }
+    .form-side { display:grid; align-content:center; padding:60px; }
+    .eyebrow { color:#967500; font-size:11px; font-weight:850; letter-spacing:.12em; }
+    h2 { margin:8px 0 7px; font-size:28px; }
+    .hint { margin:0 0 30px; color:var(--muted); }
+    label { display:block; margin:16px 0 7px; font-size:12px; font-weight:750; }
+    input { width:100%; padding:13px 14px; border:1px solid var(--line); border-radius:12px; outline:none; background:#faf9f4; }
+    input:focus { border-color:#caa800; box-shadow:0 0 0 3px rgba(255,213,47,.22); }
+    button { width:100%; margin-top:24px; padding:14px; border:0; border-radius:13px; color:#171716; background:var(--yellow); cursor:pointer; font-weight:850; }
+    button:disabled { opacity:.55; cursor:wait; }
+    .error { min-height:22px; margin-top:14px; color:#b23d26; font-size:12px; }
+    .security { margin-top:22px; color:#96938a; font-size:10px; }
+    @media(max-width:760px) { .shell{grid-template-columns:1fr}.intro{display:none}.form-side{padding:42px 30px;min-height:520px} }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="intro">
+      <div class="brand"><div class="mark">闲</div><div><strong>闲置法庭</strong><small>DISPUTE OPS</small></div></div>
+      <h1>审核员争议调查与裁决工作台</h1>
+      <p>查看冻结案件材料，启动多 Agent 调查，复核证据与规则，批准可执行的模拟处置建议。</p>
+      <div class="boundary">当前阶段只开放内部 REVIEWER 角色。买卖双方是案件业务主体，不是工作台登录用户。</div>
+    </section>
+    <section class="form-side">
+      <div class="eyebrow">REVIEWER ACCESS</div>
+      <h2>登录工作台</h2>
+      <p class="hint">身份由服务端 Session 确定，操作会写入案件审计记录。</p>
+      <form id="loginForm">
+        <label for="username">审核员账号</label>
+        <input id="username" name="username" autocomplete="username" required autofocus>
+        <label for="password">密码</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+        <button id="submitButton" type="submit">进入案件工作台</button>
+        <div class="error" id="error" role="alert"></div>
+      </form>
+      <div class="security">使用 HttpOnly、SameSite=Strict 的服务端 Session；写操作额外校验 CSRF Token。</div>
+    </section>
+  </main>
+  <script>
+    const form = document.getElementById('loginForm');
+    const button = document.getElementById('submitButton');
+    const errorBox = document.getElementById('error');
+    function safeNext() {
+      const value = new URLSearchParams(location.search).get('next');
+      return value && value.startsWith('/') && !value.startsWith('//') ? value : '/workbench';
+    }
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      button.disabled = true;
+      errorBox.textContent = '';
+      try {
+        const response = await fetch('/auth/login', {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          credentials:'same-origin',
+          body:JSON.stringify({username:form.username.value,password:form.password.value})
+        });
+        if (!response.ok) {
+          const payload = await response.json().catch(() => ({}));
+          throw new Error(payload.detail || '登录失败，请稍后重试');
+        }
+        location.replace(safeNext());
+      } catch (error) {
+        errorBox.textContent = error.message;
+        button.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

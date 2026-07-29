@@ -18,11 +18,13 @@
 - `user_seller_demo`
 - `user_admin_demo`
 
+第二十四步起，所有接入 API 都要求审核员 Session，写请求还要求 CSRF。先按 `README.md` 登录并设置 `BASE`、`COOKIE`、`CSRF`；下列请求中的买家/卖家 ID 是被代录的业务主体，真实操作者始终来自 Session。旧 `actor_id` 字段仅为兼容保留，认证开启时会被忽略。
+
 ### 1. 创建交易
 
 ```bash
-curl -X POST http://127.0.0.1:8000/transactions \
-  -H 'Content-Type: application/json' \
+curl -b "$COOKIE" -X POST "$BASE/transactions" \
+  -H "X-CSRF-Token: $CSRF" -H 'Content-Type: application/json' \
   -d '{
     "transaction_id":"txn_api_001",
     "buyer_id":"user_buyer_demo",
@@ -31,31 +33,28 @@ curl -X POST http://127.0.0.1:8000/transactions \
     "paid_amount_minor":280000,
     "paid_at":"2026-07-10T09:30:00+08:00",
     "delivered_at":"2026-07-13T15:30:00+08:00",
-    "order_status":"DISPUTED",
-    "actor_id":"user_admin_demo"
+    "order_status":"DISPUTED"
   }'
 ```
 
 ### 2. 导入商品快照
 
 ```bash
-curl -X POST http://127.0.0.1:8000/transactions/txn_api_001/listing-snapshots \
-  -H 'Content-Type: application/json' \
+curl -b "$COOKIE" -X POST "$BASE/transactions/txn_api_001/listing-snapshots" \
+  -H "X-CSRF-Token: $CSRF" -H 'Content-Type: application/json' \
   -d '{
     "snapshot_id":"snapshot_api_001",
     "payload":{"title":"二手笔记本","memory_gb":16,"device_serial":"SN-API-001"},
-    "captured_at":"2026-07-13T16:00:00+08:00",
-    "actor_id":"user_admin_demo"
+    "captured_at":"2026-07-13T16:00:00+08:00"
   }'
 ```
 
 ### 3. 批量导入聊天
 
 ```bash
-curl -X POST http://127.0.0.1:8000/transactions/txn_api_001/messages:batch \
-  -H 'Content-Type: application/json' \
+curl -b "$COOKIE" -X POST "$BASE/transactions/txn_api_001/messages:batch" \
+  -H "X-CSRF-Token: $CSRF" -H 'Content-Type: application/json' \
   -d '{
-    "actor_id":"user_admin_demo",
     "messages":[{
       "message_id":"message_api_001",
       "sender_role":"SELLER",
@@ -68,8 +67,8 @@ curl -X POST http://127.0.0.1:8000/transactions/txn_api_001/messages:batch \
 ### 4. 提交争议和 Claim
 
 ```bash
-curl -X POST http://127.0.0.1:8000/disputes \
-  -H 'Content-Type: application/json' \
+curl -b "$COOKIE" -X POST "$BASE/disputes" \
+  -H "X-CSRF-Token: $CSRF" -H 'Content-Type: application/json' \
   -d '{
     "case_id":"case_api_001",
     "transaction_id":"txn_api_001",
@@ -88,8 +87,8 @@ curl -X POST http://127.0.0.1:8000/disputes \
 ### 5. 上传文字证据
 
 ```bash
-curl -X POST http://127.0.0.1:8000/cases/case_api_001/evidence \
-  -H 'Content-Type: application/json' \
+curl -b "$COOKIE" -X POST "$BASE/cases/case_api_001/evidence" \
+  -H "X-CSRF-Token: $CSRF" -H 'Content-Type: application/json' \
   -d '{
     "evidence_id":"ev_api_001",
     "submitted_by":"BUYER",
@@ -114,9 +113,9 @@ curl -X POST http://127.0.0.1:8000/cases/case_api_001/evidence \
 先读取案件的 `state_version`，再进行乐观并发冻结：
 
 ```bash
-curl -X POST http://127.0.0.1:8000/cases/case_api_001/freeze \
-  -H 'Content-Type: application/json' \
-  -d '{"actor_id":"user_admin_demo","expected_state_version":1}'
+curl -b "$COOKIE" -X POST "$BASE/cases/case_api_001/freeze" \
+  -H "X-CSRF-Token: $CSRF" -H 'Content-Type: application/json' \
+  -d '{"expected_state_version":1}'
 ```
 
 冻结成功后状态为 `EVIDENCE_LOCKED`。再次发送相同请求会返回同一 Manifest Hash 和 `idempotent_replay=true`。
@@ -124,14 +123,14 @@ curl -X POST http://127.0.0.1:8000/cases/case_api_001/freeze \
 读取接入材料和完整性状态：
 
 ```bash
-curl http://127.0.0.1:8000/cases/case_api_001/intake
+curl -b "$COOKIE" "$BASE/cases/case_api_001/intake"
 ```
 
 启动调查：
 
 ```bash
-curl -X POST http://127.0.0.1:8000/cases/case_api_001/workflow \
-  -H 'Content-Type: application/json' -d '{}'
+curl -b "$COOKIE" -X POST "$BASE/cases/case_api_001/workflow" \
+  -H "X-CSRF-Token: $CSRF" -H 'Content-Type: application/json' -d '{}'
 ```
 
 该接口返回 `202 Accepted` 和 `job_id`，不会等待模型完成。使用
@@ -142,7 +141,7 @@ curl -X POST http://127.0.0.1:8000/cases/case_api_001/workflow \
 
 - 相同业务 ID + 相同规范化内容：`200`，响应中 `created=false` 或 `reused_count>0`；
 - 相同业务 ID + 不同内容：`409`；
-- 无权限 actor：`403`；
+- 未登录：`401`；缺失/错误 CSRF 或角色无权执行：`403`；
 - 哈希、关联 ID、时区或冻结前置条件错误：`400`；
 - `expected_state_version` 冲突：`409`；
 - 冻结后修改基线：`409`，应改用补问或申诉接口。

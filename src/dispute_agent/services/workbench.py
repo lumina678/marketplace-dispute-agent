@@ -304,6 +304,7 @@ class WorkbenchService:
                             "decision_id": item.decision_id,
                             "appellant_id": item.appellant_id,
                             "appellant_role": item.appellant_role,
+                            "recorded_by_id": item.recorded_by_id,
                             "grounds": item.grounds,
                             "statement": item.statement,
                             "evidence_ids": item.evidence_ids_json,
@@ -336,6 +337,7 @@ class WorkbenchService:
         return {
             "evidence_id": item.id,
             "submitted_by": item.submitted_by,
+            "recorded_by_id": item.recorded_by_id,
             "evidence_type": item.evidence_type,
             "description": item.description,
             "text_content": item.content_text,

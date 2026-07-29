@@ -6,12 +6,19 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from dispute_agent.db import SessionLocal
+from dispute_agent.auth import (
+    ReviewerAuthService,
+    ReviewerSession,
+    SessionStore,
+    SessionStoreUnavailable,
+    create_session_store,
+)
 from dispute_agent.errors import DisputeAgentError, NotFoundError, QueueUnavailableError
 from dispute_agent.agents.backend import StructuredGenerationBackend, create_generation_backend
 from dispute_agent.agents.runtime import AgentRuntime
@@ -76,7 +83,7 @@ class WorkflowRequest(BaseModel):
 
 
 class WorkflowControlRequest(BaseModel):
-    actor_id: str = Field(min_length=1)
+    actor_id: str = Field(default="authenticated-reviewer", min_length=1)
     reason: str = Field(min_length=1, max_length=1000)
 
 
@@ -104,13 +111,13 @@ class GuardRequest(BaseModel):
 
 class ReviewDecisionRequest(BaseModel):
     decision_id: str
-    reviewer_id: str
+    reviewer_id: str = "authenticated-reviewer"
     reason: str = Field(min_length=1)
 
 
 class ReturnToInvestigationRequest(BaseModel):
     decision_id: str
-    reviewer_id: str
+    reviewer_id: str = "authenticated-reviewer"
     instructions: str = Field(min_length=1)
     claim_ids: list[str] | None = None
 
@@ -143,8 +150,13 @@ class AppealSubmitRequest(BaseModel):
 
 
 class AppealReviewRequest(BaseModel):
-    reviewer_id: str
+    reviewer_id: str = "authenticated-reviewer"
     reason: str = Field(min_length=1)
+
+
+class LoginRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=80)
+    password: str = Field(min_length=1, max_length=512)
 
 
 def create_app(
@@ -153,6 +165,7 @@ def create_app(
     settings: Settings | None = None,
     generation_backend: StructuredGenerationBackend | None = None,
     workflow_queue: WorkflowQueue | None = None,
+    auth_session_store: SessionStore | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     backend = generation_backend or create_generation_backend(settings)
@@ -214,6 +227,14 @@ def create_app(
     app.state.workflow_executor = workflow_executor
     app.state.workflow_queue = task_queue
     deployment_health = DeploymentHealthService(session_factory, task_queue, settings)
+    session_store = auth_session_store or create_session_store(settings)
+    auth = ReviewerAuthService(
+        session_factory,
+        settings=settings,
+        session_store=session_store,
+    )
+    app.state.auth_service = auth
+    app.state.auth_session_store = session_store
 
     def get_session() -> Session:
         session = session_factory()
@@ -221,6 +242,71 @@ def create_app(
             yield session
         finally:
             session.close()
+
+    def authenticated_session(request: Request) -> ReviewerSession:
+        session = getattr(request.state, "reviewer_session", None)
+        if session is None:
+            raise HTTPException(status_code=401, detail="需要审核员登录")
+        return session
+
+    def resolved_actor(request: Request, claimed_actor: str) -> str:
+        if not settings.auth_enabled:
+            return claimed_actor
+        return authenticated_session(request).reviewer_id
+
+    public_routes = {
+        ("GET", "/health"),
+        ("GET", "/ready"),
+        ("GET", "/worker/health"),
+        ("GET", "/workflow/health"),
+        ("GET", "/login"),
+        ("GET", "/workbench"),
+        ("GET", "/"),
+        ("POST", "/auth/login"),
+    }
+
+    @app.middleware("http")
+    async def reviewer_auth_boundary(request: Request, call_next):  # type: ignore[no-untyped-def]
+        if not settings.auth_enabled or (request.method, request.url.path) in public_routes:
+            return await call_next(request)
+        session_id = request.cookies.get(settings.auth_session_cookie_name)
+        if not session_id:
+            return JSONResponse(status_code=401, content={"detail": "需要审核员登录"})
+        try:
+            reviewer_session = session_store.get(session_id)
+        except SessionStoreUnavailable as exc:
+            return JSONResponse(status_code=503, content={"detail": str(exc)})
+        if reviewer_session is None:
+            return JSONResponse(status_code=401, content={"detail": "登录已失效，请重新登录"})
+        if not auth.is_session_principal_active(reviewer_session):
+            try:
+                session_store.delete(session_id)
+            except SessionStoreUnavailable as exc:
+                return JSONResponse(status_code=503, content={"detail": str(exc)})
+            return JSONResponse(status_code=401, content={"detail": "审核员账号已停用或权限已变更"})
+        request.state.reviewer_session = reviewer_session
+        if request.method not in {"GET", "HEAD", "OPTIONS"} and not auth.csrf_matches(
+            reviewer_session,
+            request.headers.get("X-CSRF-Token"),
+        ):
+            return JSONResponse(status_code=403, content={"detail": "CSRF 校验失败"})
+        response = await call_next(request)
+        response.headers.setdefault("Cache-Control", "no-store")
+        return response
+
+    @app.middleware("http")
+    async def browser_security_headers(request: Request, call_next):  # type: ignore[no-untyped-def]
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "frame-ancestors 'none'; base-uri 'self'; object-src 'none'",
+        )
+        if settings.should_use_secure_auth_cookie():
+            response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        return response
 
     @app.exception_handler(DisputeAgentError)
     async def dispute_error_handler(_request, exc: DisputeAgentError):  # type: ignore[no-untyped-def]
@@ -240,6 +326,94 @@ def create_app(
             else 400
         )
         return JSONResponse(status_code=status, content={"error": {"code": exc.code, "message": str(exc)}})
+
+    @app.exception_handler(SessionStoreUnavailable)
+    async def session_store_error_handler(_request, exc: SessionStoreUnavailable):  # type: ignore[no-untyped-def]
+        return JSONResponse(status_code=503, content={"detail": str(exc)})
+
+    @app.get("/", include_in_schema=False)
+    def root_page() -> RedirectResponse:
+        return RedirectResponse(url="/workbench", status_code=302)
+
+    @app.get("/login", response_class=HTMLResponse, include_in_schema=False)
+    def login_page() -> str:
+        page = settings.web_directory / "login.html"
+        return page.read_text(encoding="utf-8")
+
+    @app.post("/auth/login")
+    def login(request: LoginRequest, http_request: Request) -> JSONResponse:
+        user = auth.authenticate(request.username, request.password)
+        if user is None:
+            raise HTTPException(status_code=401, detail="用户名或密码错误")
+        previous_session_id = http_request.cookies.get(settings.auth_session_cookie_name)
+        if previous_session_id:
+            session_store.delete(previous_session_id)
+        reviewer_session = auth.issue_session(user)
+        response = JSONResponse(
+            content={
+                "reviewer": {
+                    "id": reviewer_session.reviewer_id,
+                    "username": reviewer_session.username,
+                    "display_name": reviewer_session.display_name,
+                    "role": reviewer_session.role,
+                },
+                "expires_at": reviewer_session.expires_at,
+            }
+        )
+        response.set_cookie(
+            key=settings.auth_session_cookie_name,
+            value=reviewer_session.session_id,
+            max_age=settings.auth_session_ttl_seconds,
+            httponly=True,
+            secure=settings.should_use_secure_auth_cookie(),
+            samesite="strict",
+            path="/",
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @app.get("/auth/me")
+    def auth_me(http_request: Request) -> dict[str, Any]:
+        if not settings.auth_enabled:
+            return {
+                "reviewer": {
+                    "id": "user_reviewer_demo",
+                    "username": "auth-disabled",
+                    "display_name": "本地演示审核员",
+                    "role": "REVIEWER",
+                },
+                "csrf_token": "",
+                "expires_at": None,
+                "auth_enabled": False,
+            }
+        reviewer_session = authenticated_session(http_request)
+        return {
+            "reviewer": {
+                "id": reviewer_session.reviewer_id,
+                "username": reviewer_session.username,
+                "display_name": reviewer_session.display_name,
+                "role": reviewer_session.role,
+            },
+            "csrf_token": reviewer_session.csrf_token,
+            "expires_at": reviewer_session.expires_at,
+            "auth_enabled": True,
+        }
+
+    @app.post("/auth/logout")
+    def logout(http_request: Request) -> JSONResponse:
+        session_id = http_request.cookies.get(settings.auth_session_cookie_name)
+        if session_id:
+            session_store.delete(session_id)
+        response = JSONResponse(content={"logged_out": True})
+        response.delete_cookie(
+            settings.auth_session_cookie_name,
+            path="/",
+            secure=settings.should_use_secure_auth_cookie(),
+            httponly=True,
+            samesite="strict",
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -292,33 +466,39 @@ def create_app(
         return skill_registry.get(skill_name, version).manifest.model_dump(mode="json")
 
     @app.post("/transactions")
-    def create_transaction(request: TransactionCreateRequest) -> dict[str, Any]:
-        return intake.create_transaction(request)
+    def create_transaction(request: TransactionCreateRequest, http_request: Request) -> dict[str, Any]:
+        trusted = request.model_copy(update={"actor_id": resolved_actor(http_request, request.actor_id)})
+        return intake.create_transaction(trusted)
 
     @app.post("/transactions/{transaction_id}/listing-snapshots")
     def import_listing_snapshot(
         transaction_id: str,
         request: ListingSnapshotImportRequest,
+        http_request: Request,
     ) -> dict[str, Any]:
-        return intake.import_listing_snapshot(transaction_id, request)
+        trusted = request.model_copy(update={"actor_id": resolved_actor(http_request, request.actor_id)})
+        return intake.import_listing_snapshot(transaction_id, trusted)
 
     @app.post("/transactions/{transaction_id}/messages:batch")
     def import_chat_batch(
         transaction_id: str,
         request: ChatBatchImportRequest,
+        http_request: Request,
     ) -> dict[str, Any]:
-        return intake.import_chat_batch(transaction_id, request)
+        trusted = request.model_copy(update={"actor_id": resolved_actor(http_request, request.actor_id)})
+        return intake.import_chat_batch(transaction_id, trusted)
 
     @app.post("/disputes")
-    def submit_dispute(request: DisputeSubmitRequest) -> dict[str, Any]:
-        return intake.submit_dispute(request)
+    def submit_dispute(request: DisputeSubmitRequest, http_request: Request) -> dict[str, Any]:
+        recorder_id = authenticated_session(http_request).reviewer_id if settings.auth_enabled else None
+        return intake.submit_dispute(request, recorded_by_id=recorder_id)
 
     @app.get("/cases/{case_id}/routing")
     def get_case_routing(case_id: str) -> dict[str, Any]:
         return jsonable(routing.get_case_routing(case_id))
 
     @app.post("/cases/{case_id}/routing")
-    def route_case(case_id: str, request: RouteCaseRequest) -> dict[str, Any]:
+    def route_case(case_id: str, request: RouteCaseRequest, http_request: Request) -> dict[str, Any]:
         hints = {
             item.claim_id: ClaimRoutingHint.model_validate(item.model_dump(exclude={"claim_id"}))
             for item in request.claim_hints
@@ -327,31 +507,41 @@ def create_app(
             routing.route_case(
                 case_id,
                 hints=hints,
-                actor_id=request.actor_id,
+                actor_id=resolved_actor(http_request, request.actor_id),
                 force_recompute=request.force_recompute,
             )
         )
 
     @app.post("/cases/{case_id}/claims/{claim_id}/routing")
-    def route_claim(case_id: str, claim_id: str, request: RouteClaimRequest) -> dict[str, Any]:
+    def route_claim(
+        case_id: str,
+        claim_id: str,
+        request: RouteClaimRequest,
+        http_request: Request,
+    ) -> dict[str, Any]:
         hint = ClaimRoutingHint.model_validate(request.model_dump(exclude={"actor_id", "force_recompute"}))
         return jsonable(
             routing.route_claim(
                 case_id,
                 claim_id,
                 hint=hint,
-                actor_id=request.actor_id,
+                actor_id=resolved_actor(http_request, request.actor_id),
                 force_recompute=request.force_recompute,
             )
         )
 
     @app.post("/cases/{case_id}/claims/{claim_id}/routing-override")
-    def override_claim_routing(case_id: str, claim_id: str, request: RoutingOverrideRequest) -> dict[str, Any]:
+    def override_claim_routing(
+        case_id: str,
+        claim_id: str,
+        request: RoutingOverrideRequest,
+        http_request: Request,
+    ) -> dict[str, Any]:
         return jsonable(
             routing.override_claim(
                 case_id,
                 claim_id,
-                reviewer_id=request.reviewer_id,
+                reviewer_id=resolved_actor(http_request, request.reviewer_id),
                 issue_type=request.issue_type,
                 claim_type=request.claim_type,
                 reason=request.reason,
@@ -384,8 +574,14 @@ def create_app(
         ]
 
     @app.get("/cases/{case_id}")
-    def get_case(case_id: str) -> dict[str, Any]:
-        return tool_service.call("case.get_state", {"case_id": case_id}, actor="REVIEWER")
+    def get_case(case_id: str, http_request: Request) -> dict[str, Any]:
+        actor_id = authenticated_session(http_request).reviewer_id if settings.auth_enabled else None
+        return tool_service.call(
+            "case.get_state",
+            {"case_id": case_id},
+            actor="REVIEWER",
+            actor_id=actor_id,
+        )
 
     @app.get("/cases/{case_id}/intake")
     def get_case_intake(case_id: str) -> dict[str, Any]:
@@ -395,15 +591,19 @@ def create_app(
     def upload_text_evidence(
         case_id: str,
         request: TextEvidenceUploadRequest,
+        http_request: Request,
     ) -> dict[str, Any]:
-        return intake.upload_text_evidence(case_id, request)
+        recorder_id = authenticated_session(http_request).reviewer_id if settings.auth_enabled else None
+        return intake.upload_text_evidence(case_id, request, recorded_by_id=recorder_id)
 
     @app.post("/cases/{case_id}/freeze")
     def freeze_case_materials(
         case_id: str,
         request: FreezeCaseMaterialsRequest,
+        http_request: Request,
     ) -> dict[str, Any]:
-        return intake.freeze_case_materials(case_id, request)
+        trusted = request.model_copy(update={"actor_id": resolved_actor(http_request, request.actor_id)})
+        return intake.freeze_case_materials(case_id, trusted)
 
     @app.get("/cases/{case_id}/events")
     def get_events(case_id: str, session: Session = Depends(get_session)) -> list[dict[str, Any]]:
@@ -453,8 +653,9 @@ def create_app(
         return page.read_text(encoding="utf-8")
 
     @app.post("/cases/{case_id}/runs")
-    def start_run(case_id: str) -> dict[str, Any]:
-        return orchestrator.start(case_id)
+    def start_run(case_id: str, http_request: Request) -> dict[str, Any]:
+        actor_id = resolved_actor(http_request, "orchestrator")
+        return orchestrator.start(case_id, actor_id=actor_id)
 
     def dispatch_workflow_job(job: dict[str, Any]) -> dict[str, Any]:
         if job["status"] in {"QUEUED", "RETRYING"}:
@@ -467,10 +668,15 @@ def create_app(
         return workflow_jobs.get(job["job_id"])
 
     @app.post("/cases/{case_id}/workflow", status_code=status.HTTP_202_ACCEPTED)
-    def run_workflow(case_id: str, request: WorkflowRequest | None = None) -> dict[str, Any]:
+    def run_workflow(
+        case_id: str,
+        http_request: Request,
+        request: WorkflowRequest | None = None,
+    ) -> dict[str, Any]:
+        claimed_actor = request.actor_id if request else "investigation-workflow"
         job, created = workflow_jobs.create_or_get_active(
             case_id,
-            actor_id=request.actor_id if request else "investigation-workflow",
+            actor_id=resolved_actor(http_request, claimed_actor),
         )
         if created or (job.get("error") or {}).get("code") == "QUEUE_UNAVAILABLE":
             return dispatch_workflow_job(job)
@@ -530,11 +736,15 @@ def create_app(
         )
 
     @app.post("/workflow-jobs/{job_id}/pause", status_code=status.HTTP_202_ACCEPTED)
-    def pause_workflow_job(job_id: str, request: WorkflowControlRequest) -> dict[str, Any]:
+    def pause_workflow_job(
+        job_id: str,
+        request: WorkflowControlRequest,
+        http_request: Request,
+    ) -> dict[str, Any]:
         before = workflow_jobs.get(job_id)
         job = workflow_jobs.request_pause(
             job_id,
-            actor_id=request.actor_id,
+            actor_id=resolved_actor(http_request, request.actor_id),
             reason=request.reason,
         )
         if before["status"] in {"QUEUED", "RETRYING"}:
@@ -542,20 +752,28 @@ def create_app(
         return job
 
     @app.post("/workflow-jobs/{job_id}/resume", status_code=status.HTTP_202_ACCEPTED)
-    def resume_workflow_job(job_id: str, request: WorkflowControlRequest) -> dict[str, Any]:
+    def resume_workflow_job(
+        job_id: str,
+        request: WorkflowControlRequest,
+        http_request: Request,
+    ) -> dict[str, Any]:
         job = workflow_jobs.resume(
             job_id,
-            actor_id=request.actor_id,
+            actor_id=resolved_actor(http_request, request.actor_id),
             reason=request.reason,
         )
         return dispatch_workflow_job(job)
 
     @app.post("/workflow-jobs/{job_id}/cancel", status_code=status.HTTP_202_ACCEPTED)
-    def cancel_workflow_job(job_id: str, request: WorkflowControlRequest) -> dict[str, Any]:
+    def cancel_workflow_job(
+        job_id: str,
+        request: WorkflowControlRequest,
+        http_request: Request,
+    ) -> dict[str, Any]:
         before = workflow_jobs.get(job_id)
         job = workflow_jobs.request_cancel(
             job_id,
-            actor_id=request.actor_id,
+            actor_id=resolved_actor(http_request, request.actor_id),
             reason=request.reason,
         )
         if before["status"] in {"QUEUED", "RETRYING", "PAUSED"}:
@@ -593,20 +811,28 @@ def create_app(
         return human_review.get_review_package(case_id, decision_id=decision_id)
 
     @app.post("/cases/{case_id}/reviews/approve")
-    def approve_review(case_id: str, request: ReviewDecisionRequest) -> dict[str, Any]:
+    def approve_review(
+        case_id: str,
+        request: ReviewDecisionRequest,
+        http_request: Request,
+    ) -> dict[str, Any]:
         return human_review.approve(
             case_id,
             decision_id=request.decision_id,
-            reviewer_id=request.reviewer_id,
+            reviewer_id=resolved_actor(http_request, request.reviewer_id),
             reason=request.reason,
         )
 
     @app.post("/cases/{case_id}/reviews/reject")
-    def reject_review(case_id: str, request: ReviewDecisionRequest) -> dict[str, Any]:
+    def reject_review(
+        case_id: str,
+        request: ReviewDecisionRequest,
+        http_request: Request,
+    ) -> dict[str, Any]:
         return human_review.reject(
             case_id,
             decision_id=request.decision_id,
-            reviewer_id=request.reviewer_id,
+            reviewer_id=resolved_actor(http_request, request.reviewer_id),
             reason=request.reason,
         )
 
@@ -614,29 +840,38 @@ def create_app(
     def return_review_to_investigation(
         case_id: str,
         request: ReturnToInvestigationRequest,
+        http_request: Request,
     ) -> dict[str, Any]:
         return human_review.return_to_investigation(
             case_id,
             decision_id=request.decision_id,
-            reviewer_id=request.reviewer_id,
+            reviewer_id=resolved_actor(http_request, request.reviewer_id),
             instructions=request.instructions,
             claim_ids=request.claim_ids,
         )
 
     @app.post("/cases/{case_id}/execution")
-    def execute_resolution(case_id: str, request: ExecutionRequest) -> dict[str, Any]:
+    def execute_resolution(
+        case_id: str,
+        request: ExecutionRequest,
+        http_request: Request,
+    ) -> dict[str, Any]:
         return execution.execute(
             case_id,
             decision_id=request.decision_id,
-            actor_id=request.actor_id,
+            actor_id=resolved_actor(http_request, request.actor_id),
         )
 
     @app.post("/cases/{case_id}/execution/retry")
-    def retry_resolution(case_id: str, request: ExecutionRequest) -> dict[str, Any]:
+    def retry_resolution(
+        case_id: str,
+        request: ExecutionRequest,
+        http_request: Request,
+    ) -> dict[str, Any]:
         return execution.retry(
             case_id,
             decision_id=request.decision_id,
-            actor_id=request.actor_id,
+            actor_id=resolved_actor(http_request, request.actor_id),
         )
 
     @app.get("/cases/{case_id}/execution")
@@ -647,7 +882,12 @@ def create_app(
         return execution.get_status(case_id, decision_id=decision_id)
 
     @app.post("/cases/{case_id}/appeals")
-    def submit_appeal(case_id: str, request: AppealSubmitRequest) -> dict[str, Any]:
+    def submit_appeal(
+        case_id: str,
+        request: AppealSubmitRequest,
+        http_request: Request,
+    ) -> dict[str, Any]:
+        recorder_id = authenticated_session(http_request).reviewer_id if settings.auth_enabled else None
         return appeals.submit(
             case_id,
             appellant_id=request.appellant_id,
@@ -656,6 +896,7 @@ def create_app(
             statement=request.statement,
             evidence_ids=request.evidence_ids,
             new_evidence=[item.model_dump() for item in request.new_evidence],
+            recorded_by_id=recorder_id,
         )
 
     @app.get("/cases/{case_id}/appeals")
@@ -667,11 +908,12 @@ def create_app(
         case_id: str,
         appeal_id: str,
         request: AppealReviewRequest,
+        http_request: Request,
     ) -> dict[str, Any]:
         return appeals.accept(
             case_id,
             appeal_id=appeal_id,
-            reviewer_id=request.reviewer_id,
+            reviewer_id=resolved_actor(http_request, request.reviewer_id),
             reason=request.reason,
         )
 
@@ -680,11 +922,12 @@ def create_app(
         case_id: str,
         appeal_id: str,
         request: AppealReviewRequest,
+        http_request: Request,
     ) -> dict[str, Any]:
         return appeals.deny(
             case_id,
             appeal_id=appeal_id,
-            reviewer_id=request.reviewer_id,
+            reviewer_id=resolved_actor(http_request, request.reviewer_id),
             reason=request.reason,
         )
 
@@ -693,28 +936,44 @@ def create_app(
         return appeals.close_expired_window(case_id)
 
     @app.post("/cases/{case_id}/runs/{case_run_id}/phases/{phase}")
-    def submit_phase(case_id: str, case_run_id: str, phase: str, request: PhaseResultRequest) -> dict[str, Any]:
+    def submit_phase(
+        case_id: str,
+        case_run_id: str,
+        phase: str,
+        request: PhaseResultRequest,
+        http_request: Request,
+    ) -> dict[str, Any]:
         return orchestrator.submit_phase_result(
             case_id,
             case_run_id=case_run_id,
             phase=phase,
             payload=request.payload,
-            actor=request.actor,
+            actor=resolved_actor(http_request, request.actor),
             tokens_used=request.tokens_used,
         )
 
     @app.post("/cases/{case_id}/resume-evidence")
-    def resume_evidence(case_id: str, request: ResumeEvidenceRequest) -> dict[str, Any]:
+    def resume_evidence(
+        case_id: str,
+        request: ResumeEvidenceRequest,
+        http_request: Request,
+    ) -> dict[str, Any]:
         return orchestrator.resume_with_evidence(
             case_id,
             target=request.target,
             evidence_id=request.evidence_id,
             question_ids=request.question_ids,
-            actor_id=request.actor_id,
+            actor_id=resolved_actor(http_request, request.actor_id),
         )
 
     @app.post("/cases/{case_id}/evidence-and-resume")
-    def submit_evidence_and_resume(case_id: str, request: EvidenceAndResumeRequest) -> dict[str, Any]:
+    def submit_evidence_and_resume(
+        case_id: str,
+        request: EvidenceAndResumeRequest,
+        http_request: Request,
+    ) -> dict[str, Any]:
+        actor_id = resolved_actor(http_request, request.actor_id)
+        recorder_id = actor_id if settings.auth_enabled else None
         result = evidence_submission.submit_and_resume(
             case_id,
             target=request.target,
@@ -729,10 +988,11 @@ def create_app(
             immutable_uri=request.immutable_uri,
             source_system=request.source_system,
             handling_flags=request.handling_flags,
-            actor_id=request.actor_id,
+            actor_id=actor_id,
+            recorded_by_id=recorder_id,
         )
         if request.auto_continue:
-            job, _created = workflow_jobs.create_or_get_active(case_id, actor_id=request.actor_id)
+            job, _created = workflow_jobs.create_or_get_active(case_id, actor_id=actor_id)
             result["workflow_job"] = dispatch_workflow_job(job)
         return result
 
@@ -745,11 +1005,14 @@ def create_app(
         return orchestrator.replay(case_id)
 
     @app.post("/tools/{tool_name:path}")
-    def call_tool(tool_name: str, request: ToolCallRequest) -> Any:
+    def call_tool(tool_name: str, request: ToolCallRequest, http_request: Request) -> Any:
+        actor_id = authenticated_session(http_request).reviewer_id if settings.auth_enabled else None
+        actor_role = "REVIEWER" if settings.auth_enabled else request.actor
         return tool_service.call(
             tool_name,
             request.parameters,
-            actor=request.actor,
+            actor=actor_role,
+            actor_id=actor_id,
             case_run_id=request.case_run_id,
         )
 
