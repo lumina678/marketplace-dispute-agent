@@ -6,6 +6,10 @@
 
 ### Added
 
+- Pull Request/main 的 GitHub Actions 质量门禁，覆盖编译、全量测试、异步 Workflow、PostgreSQL migration、前端语法、依赖漏洞和 API/Worker 镜像构建。
+- main 成功后发布 commit-SHA 镜像，以及可配置的 staging 部署和健康 smoke test。
+- production 手动发布、GitHub Environment 审批、语义版本 Tag 校验、版本镜像和 GitHub Release。
+- Dependabot、PR 模板、发布检查清单和可复用的前端、版本、部署检查脚本。
 - 审核员专用登录页，以及 `/auth/login`、`/auth/me`、`/auth/logout`。
 - Redis 服务端 Session、Argon2 密码、HttpOnly/SameSite/生产 Secure Cookie 与 CSRF 防护。
 - `xianyu-create-reviewer` 账号创建/更新 CLI。
@@ -20,6 +24,7 @@
 
 ### Security
 
+- 开发测试依赖升级到包含已知漏洞修复的 `pytest>=9.0.3`；CI 审计环境先升级到 `pip>=26.1.2`。
 - 客户端请求体中的身份字段不再作为授权或审计来源。
 - 增加 CSRF、账号停用即时校验、Session 撤销以及基础浏览器安全响应头。
 

@@ -1,0 +1,128 @@
+name: Publish images and deploy staging
+
+on:
+  workflow_run:
+    workflows: [CI]
+    branches: [main]
+    types: [completed]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    name: Publish commit-SHA images
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      api_image: ${{ steps.images.outputs.api_image }}
+      worker_image: ${{ steps.images.outputs.worker_image }}
+      release_sha: ${{ steps.images.outputs.release_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - name: Derive immutable image names
+        id: images
+        env:
+          RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+        run: |
+          owner="$(printf '%s' "$REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          {
+            echo "api_image=ghcr.io/$owner/xianyu-api:$RELEASE_SHA"
+            echo "worker_image=ghcr.io/$owner/xianyu-worker:$RELEASE_SHA"
+            echo "release_sha=$RELEASE_SHA"
+          } >> "$GITHUB_OUTPUT"
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@v3
+      - name: Build and push API
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/api.Dockerfile
+          push: true
+          tags: ${{ steps.images.outputs.api_image }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+      - name: Build and push Worker
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/worker.Dockerfile
+          push: true
+          tags: ${{ steps.images.outputs.worker_image }}
+          cache-from: type=gha,scope=worker
+          cache-to: type=gha,mode=max,scope=worker
+
+  deploy-staging:
+    name: Deploy and smoke-test staging
+    if: vars.STAGING_DEPLOY_ENABLED == 'true'
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: staging
+      url: ${{ vars.PUBLIC_BASE_URL }}
+    env:
+      DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+      DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+      DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+      PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+      GHCR_USERNAME: ${{ vars.GHCR_USERNAME }}
+      GHCR_PULL_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+      API_IMAGE: ${{ needs.publish.outputs.api_image }}
+      WORKER_IMAGE: ${{ needs.publish.outputs.worker_image }}
+      RELEASE_SHA: ${{ needs.publish.outputs.release_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.publish.outputs.release_sha }}
+      - name: Validate deployment configuration
+        run: |
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_USER"
+          test -n "$DEPLOY_PATH"
+          test -n "$PUBLIC_BASE_URL"
+          test -n "$DEPLOY_SSH_KEY"
+          test -n "$DEPLOY_KNOWN_HOSTS"
+          test -n "$GHCR_USERNAME"
+          test -n "$GHCR_PULL_TOKEN"
+      - name: Configure SSH
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/known_hosts
+      - name: Copy non-secret deployment bundle
+        run: |
+          tar -czf /tmp/xianyu-deploy.tgz \
+            compose.yaml \
+            deploy/caddy \
+            deploy/compose.staging.yaml \
+            deploy/compose.release.yaml \
+            deploy/scripts
+          scp -P "${DEPLOY_PORT:-22}" /tmp/xianyu-deploy.tgz "$DEPLOY_USER@$DEPLOY_HOST:/tmp/xianyu-deploy.tgz"
+          ssh -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "mkdir -p '$DEPLOY_PATH' && tar -xzf /tmp/xianyu-deploy.tgz -C '$DEPLOY_PATH'"
+      - name: Authenticate server to GHCR
+        run: |
+          printf '%s' "$GHCR_PULL_TOKEN" | ssh -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "docker login ghcr.io --username '$GHCR_USERNAME' --password-stdin"
+      - name: Deploy immutable images
+        run: |
+          ssh -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "cd '$DEPLOY_PATH' && XIANYU_API_IMAGE='$API_IMAGE' XIANYU_WORKER_IMAGE='$WORKER_IMAGE' XIANYU_RELEASE='$RELEASE_SHA' bash deploy/scripts/deploy_release.sh staging"
+      - name: Smoke test staging
+        run: python scripts/smoke_deployment.py "$PUBLIC_BASE_URL"

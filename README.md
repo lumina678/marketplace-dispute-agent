@@ -2,7 +2,7 @@
 
 本项目是一个面向二手交易争议的多 Agent 调查与裁决辅助系统，通过双方观点分离、证据链构建、版本化规则检索、人工审批和幂等执行，处理普通客服流程无法解决的复杂案件。
 
-> 当前仓库完成了实施计划的前二十四步：在完整案件闭环、多 Agent 调查、确定性 Router/Skill/Guard、通用模拟案件接入、异步 Workflow 和生产部署基础上，补齐审核员端服务端 Session、CSRF、可信身份审计和登录工作台。系统不替代法院、仲裁机构或平台人工裁决员。
+> 当前仓库完成了实施计划的第一至二十四步，并按个人项目的轻量路线直接完成第二十七步：在审核员端案件闭环之上增加 CI、不可变镜像、可选 staging 部署、production 人工门禁和版本发布。第二十五步用户端页面与第二十六步完整可观测性暂缓。系统不替代法院、仲裁机构或平台人工裁决员。
 
 ## 当前 MVP
 
@@ -39,10 +39,11 @@
 | 22. 异步任务和实时进度 | [`src/dispute_agent/services/workflow_jobs.py`](src/dispute_agent/services/workflow_jobs.py)、[`src/dispute_agent/workflow_queue.py`](src/dispute_agent/workflow_queue.py)、[`src/dispute_agent/worker.py`](src/dispute_agent/worker.py)、[`docs/STEPS_22.md`](docs/STEPS_22.md) | `POST /workflow` 立即返回持久化 Job；Redis/RQ Worker 执行并重试；SSE 展示 Agent 阶段；支持心跳、超时、去重、暂停、取消和重启恢复 |
 | 23. 生产部署基础 | [`compose.yaml`](compose.yaml)、[`deploy/`](deploy/)、[`docs/STEPS_23.md`](docs/STEPS_23.md) | PostgreSQL + Redis/RQ + API/Worker + Caddy 统一编排；自动 Alembic migration、非 root 镜像、readiness、HTTPS、staging 与 SQLite 数据迁移 |
 | 24. 审核员身份与权限 | [`src/dispute_agent/auth.py`](src/dispute_agent/auth.py)、[`web/login.html`](web/login.html)、[`docs/STEPS_24.md`](docs/STEPS_24.md) | 仅开放 REVIEWER 登录；Redis 服务端 Session、HttpOnly/SameSite Cookie、CSRF、账号 CLI、真实操作者审计和受保护 API/SSE |
+| 27. CI/CD 和版本发布 | [`.github/workflows/`](.github/workflows/)、[`deploy/compose.release.yaml`](deploy/compose.release.yaml)、[`docs/STEPS_27.md`](docs/STEPS_27.md) | PR 自动编译、测试、迁移、前端、依赖和镜像检查；main 发布 SHA 镜像；按配置部署 staging；production 人工门禁；Tag 创建版本镜像与 GitHub Release |
 
 第五至第二十二步的逐步文档位于 [`docs/`](docs/)，第二十三步的生产部署、SQLite 数据迁移、域名/HTTPS 和 staging 操作手册见 [`docs/STEPS_23.md`](docs/STEPS_23.md)。默认使用无需 API Key 的 `rule-based-baseline-v1`，自有模型接入与故障语义见 [`docs/MODEL_INTEGRATION.md`](docs/MODEL_INTEGRATION.md)。
 
-第二十四步暂时只实现审核员内部端：买家和卖家仍是案件数据中的业务主体，不拥有登录入口。认证方式、账号创建、Cookie、CSRF、伪造身份测试和生产部署切换见 [`docs/STEPS_24.md`](docs/STEPS_24.md)。
+第二十四步暂时只实现审核员内部端：买家和卖家仍是案件数据中的业务主体，不拥有登录入口。认证方式、账号创建、Cookie、CSRF、伪造身份测试和生产部署切换见 [`docs/STEPS_24.md`](docs/STEPS_24.md)。第二十五步用户侧产品页和第二十六步完整可观测性明确延期；跳步原因、CI/CD 配置、GitHub Environment、v0.2.0 示例和完整操作复盘见 [`docs/STEPS_27.md`](docs/STEPS_27.md)，发布时使用 [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md)。
 本次面向使用者的变更记录在 [`CHANGELOG.md`](CHANGELOG.md) 的 `Unreleased`；正式发布时再统一确定版本号和 Git tag。
 
 ## 本地 Python 运行

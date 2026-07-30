@@ -1,0 +1,67 @@
+name: Version release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    name: Validate, publish versioned images and create GitHub Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Require tag on main and matching release metadata
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          python scripts/check_release.py --tag "$GITHUB_REF_NAME"
+      - name: Derive versioned image names
+        env:
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+        run: |
+          owner="$(printf '%s' "$REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          {
+            echo "API_TAG=ghcr.io/$owner/xianyu-api:$GITHUB_REF_NAME"
+            echo "WORKER_TAG=ghcr.io/$owner/xianyu-worker:$GITHUB_REF_NAME"
+          } >> "$GITHUB_ENV"
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@v3
+      - name: Build and push versioned API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/api.Dockerfile
+          push: true
+          tags: ${{ env.API_TAG }}
+          cache-from: type=gha,scope=api
+      - name: Build and push versioned Worker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/worker.Dockerfile
+          push: true
+          tags: ${{ env.WORKER_TAG }}
+          cache-from: type=gha,scope=worker
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --verify-tag \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            --notes "发布前检查、数据库迁移和回滚说明见 docs/RELEASE_CHECKLIST.md；面向使用者的变化见 CHANGELOG.md。"

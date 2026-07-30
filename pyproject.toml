@@ -27,7 +27,7 @@ dev = [
   "fakeredis>=2.25,<3",
   "httpx>=0.28,<1",
   "jsonschema[format]>=4.22,<5",
-  "pytest>=8.3,<9",
+  "pytest>=9.0.3,<10",
   "pytest-cov>=6,<7",
 ]
 

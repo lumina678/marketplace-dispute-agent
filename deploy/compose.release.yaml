@@ -1,0 +1,19 @@
+services:
+  migrate:
+    image: ${XIANYU_API_IMAGE:?XIANYU_API_IMAGE is required}
+    pull_policy: always
+  api:
+    image: ${XIANYU_API_IMAGE:?XIANYU_API_IMAGE is required}
+    pull_policy: always
+  worker:
+    image: ${XIANYU_WORKER_IMAGE:?XIANYU_WORKER_IMAGE is required}
+    pull_policy: always
+  seed:
+    image: ${XIANYU_API_IMAGE:?XIANYU_API_IMAGE is required}
+    pull_policy: always
+  create-reviewer:
+    image: ${XIANYU_API_IMAGE:?XIANYU_API_IMAGE is required}
+    pull_policy: always
+  migrate-sqlite:
+    image: ${XIANYU_API_IMAGE:?XIANYU_API_IMAGE is required}
+    pull_policy: always

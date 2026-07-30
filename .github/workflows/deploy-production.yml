@@ -1,0 +1,100 @@
+name: Deploy production
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_sha:
+        description: Full 40-character commit SHA already published to GHCR
+        required: true
+        type: string
+      confirmation:
+        description: Select DEPLOY after reviewing staging and the release checklist
+        required: true
+        type: choice
+        options: [ABORT, DEPLOY]
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  deploy-production:
+    name: Deploy approved image to production
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: ${{ vars.PUBLIC_BASE_URL }}
+    env:
+      PRODUCTION_DEPLOY_ENABLED: ${{ vars.PRODUCTION_DEPLOY_ENABLED }}
+      DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+      DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+      DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+      PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+      GHCR_USERNAME: ${{ vars.GHCR_USERNAME }}
+      GHCR_PULL_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+      RELEASE_SHA: ${{ inputs.image_sha }}
+    steps:
+      - name: Validate manual approval and immutable SHA
+        run: |
+          test "${{ inputs.confirmation }}" = "DEPLOY"
+          test "$PRODUCTION_DEPLOY_ENABLED" = "true"
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.image_sha }}
+          fetch-depth: 0
+      - name: Require production SHA to belong to main
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor "$RELEASE_SHA" origin/main
+      - name: Derive image names
+        env:
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+        run: |
+          owner="$(printf '%s' "$REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          {
+            echo "API_IMAGE=ghcr.io/$owner/xianyu-api:$RELEASE_SHA"
+            echo "WORKER_IMAGE=ghcr.io/$owner/xianyu-worker:$RELEASE_SHA"
+          } >> "$GITHUB_ENV"
+      - name: Validate deployment configuration
+        run: |
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_USER"
+          test -n "$DEPLOY_PATH"
+          test -n "$PUBLIC_BASE_URL"
+          test -n "$DEPLOY_SSH_KEY"
+          test -n "$DEPLOY_KNOWN_HOSTS"
+          test -n "$GHCR_USERNAME"
+          test -n "$GHCR_PULL_TOKEN"
+      - name: Configure SSH
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/known_hosts
+      - name: Copy non-secret deployment bundle
+        run: |
+          tar -czf /tmp/xianyu-deploy.tgz \
+            compose.yaml \
+            deploy/caddy \
+            deploy/compose.production.yaml \
+            deploy/compose.release.yaml \
+            deploy/scripts
+          scp -P "${DEPLOY_PORT:-22}" /tmp/xianyu-deploy.tgz "$DEPLOY_USER@$DEPLOY_HOST:/tmp/xianyu-deploy.tgz"
+          ssh -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "mkdir -p '$DEPLOY_PATH' && tar -xzf /tmp/xianyu-deploy.tgz -C '$DEPLOY_PATH'"
+      - name: Authenticate server to GHCR
+        run: |
+          printf '%s' "$GHCR_PULL_TOKEN" | ssh -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "docker login ghcr.io --username '$GHCR_USERNAME' --password-stdin"
+      - name: Deploy immutable images
+        run: |
+          ssh -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "cd '$DEPLOY_PATH' && XIANYU_API_IMAGE='$API_IMAGE' XIANYU_WORKER_IMAGE='$WORKER_IMAGE' XIANYU_RELEASE='$RELEASE_SHA' bash deploy/scripts/deploy_release.sh production"
+      - name: Smoke test production
+        run: python scripts/smoke_deployment.py "$PUBLIC_BASE_URL"
